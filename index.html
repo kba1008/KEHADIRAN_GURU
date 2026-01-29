@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html lang="ms">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>E-Hadir Sekolah</title>
+    <style>
+        body { font-family: 'Segoe UI', sans-serif; background: #f0f2f5; display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0; }
+        .container { background: white; padding: 30px; border-radius: 20px; box-shadow: 0 10px 25px rgba(0,0,0,0.1); width: 90%; max-width: 400px; text-align: center; }
+        input { width: 85%; padding: 12px; margin: 15px 0; border: 2px solid #e1e4e8; border-radius: 10px; font-size: 16px; text-align: center; outline: none; }
+        button { width: 100%; padding: 12px; border: none; border-radius: 50px; font-size: 16px; font-weight: bold; cursor: pointer; margin-top: 10px; background: #007bff; color: white; }
+        .status-box { padding: 15px; border-radius: 10px; margin: 15px 0; font-size: 14px; font-weight: bold; background: #eee; color: #555; }
+        .status-ok { background: #d4edda; color: #155724; border: 1px solid #c3e6cb; } 
+        .status-fail { background: #f8d7da; color: #721c24; border: 1px solid #f5c6cb; }
+        .shake-icon { font-size: 60px; margin: 10px 0; display: inline-block; }
+        .distance-info { font-size: 12px; color: #666; margin-top: 5px; }
+        @keyframes shake { 0%, 100% { transform: rotate(0deg); } 25% { transform: rotate(10deg); } 75% { transform: rotate(-10deg); } }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <h2>E-Hadir Sekolah</h2>
+    <div class="shake-icon" id="icon">📍</div>
+    <input type="text" id="namaGuru" placeholder="Nama Penuh Guru" required>
+    <div id="status" class="status-box">📡 Mengesan lokasi...</div>
+    <div id="distanceDisplay" class="distance-info"></div>
+    <button onclick="requestPermission()">Pengguna iPhone Tekan Sini</button>
+</div>
+
+<script>
+    // ******************************************************
+    // PASTE "LINK RAHSIA" ANDA DI DALAM TANDA ' ' DI BAWAH:
+    const scriptURL = 'https://script.google.com/macros/s/AKfycbyT1LISm-R7Ak2fS-9Ibg-wujHVpZ8pH4a691-TF0NtTUimvgvKBDleR1OQ92Q1uCP4/exec'; 
+    // ******************************************************
+
+    const SCHOOL_LAT = 5.235744; // Latitud Sekolah Anda
+    const SCHOOL_LNG = 100.683336; // Longitud Sekolah Anda
+    const MAX_RADIUS_METER = 100; // Radius 100 meter
+
+    let userLat, userLng, distanceFromSchool = 9999, lastX=null, lastY=null, lastZ=null, isSubmitting = false, isInZone = false;
+
+    function getDistanceFromLatLonInMeters(lat1, lon1, lat2, lon2) {
+        var R = 6371; var dLat = deg2rad(lat2-lat1); var dLon = deg2rad(lon2-lon1); 
+        var a = Math.sin(dLat/2) * Math.sin(dLat/2) + Math.cos(deg2rad(lat1)) * Math.cos(deg2rad(lat2)) * Math.sin(dLon/2) * Math.sin(dLon/2); 
+        var c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a)); return R * c * 1000;
+    }
+    function deg2rad(deg) { return deg * (Math.PI/180); }
+
+    const geoOptions = { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 };
+    navigator.geolocation.watchPosition((pos) => {
+        userLat = pos.coords.latitude; userLng = pos.coords.longitude;
+        distanceFromSchool = getDistanceFromLatLonInMeters(userLat, userLng, SCHOOL_LAT, SCHOOL_LNG);
+        let statusEl = document.getElementById('status');
+        let iconEl = document.getElementById('icon');
+        document.getElementById('distanceDisplay').innerText = "Jarak: " + Math.round(distanceFromSchool) + "m";
+
+        if (distanceFromSchool <= MAX_RADIUS_METER) {
+            isInZone = true;
+            statusEl.innerText = "✅ DALAM KAWASAN\nSila Goncang Telefon"; statusEl.className = "status-box status-ok";
+            iconEl.innerText = "📳"; iconEl.style.animation = "shake 2.5s infinite";
+        } else {
+            isInZone = false;
+            statusEl.innerText = "❌ LUAR KAWASAN"; statusEl.className = "status-box status-fail";
+            iconEl.innerText = "🚫"; iconEl.style.animation = "none";
+        }
+    }, (err) => { document.getElementById('status').innerText = "❌ Sila ON GPS!"; }, geoOptions);
+
+    function requestPermission() {
+        if (typeof DeviceMotionEvent.requestPermission === 'function') {
+            DeviceMotionEvent.requestPermission().then(r => { if (r=='granted') window.addEventListener('devicemotion', handleMotion); });
+        } else { window.addEventListener('devicemotion', handleMotion); }
+    }
+
+    if (window.DeviceMotionEvent && typeof DeviceMotionEvent.requestPermission !== 'function') window.addEventListener('devicemotion', handleMotion);
+
+    function handleMotion(e) {
+        if (isSubmitting) return;
+        let acc = e.accelerationIncludingGravity;
+        if (!acc.x) return;
+        if (lastX === null) { lastX=acc.x; lastY=acc.y; lastZ=acc.z; return; }
+        let speed = Math.abs(acc.x + acc.y + acc.z - lastX - lastY - lastZ);
+        if (speed > 20) hantarData();
+        lastX = acc.x; lastY = acc.y; lastZ = acc.z;
+    }
+
+    function hantarData() {
+        let nama = document.getElementById('namaGuru').value;
+        if (nama.length < 3) { alert("Sila taip nama penuh!"); return; }
+        if (!isInZone) { alert("ANDA DI LUAR KAWASAN (" + Math.round(distanceFromSchool) + "m)"); return; }
+
+        isSubmitting = true;
+        document.getElementById('status').innerText = "⏳ Menghantar...";
+        let formData = new FormData();
+        formData.append('nama', nama); formData.append('lat', userLat); formData.append('lng', userLng);
+
+        fetch(scriptURL, { method: 'POST', body: formData })
+            .then(res => { alert("✅ Kehadiran " + nama + " Berjaya!"); document.getElementById('status').innerText = "✅ Selesai"; isSubmitting = false; })
+            .catch(e => { alert("Ralat Internet!"); isSubmitting = false; });
+    }
+</script>
+</body>
+</html>
