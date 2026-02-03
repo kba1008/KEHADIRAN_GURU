@@ -17,10 +17,11 @@
         
         // 3. Koordinat Lokasi (Ambil dari Google Maps)
         const SCHOOL_LAT = 5.2278837109605005; 
+        
         const SCHOOL_LNG = 100.69909836086856; 
         
         // 4. Jarak Radius yang dibenarkan (dalam meter)
-        const RADIUS_METER = 10; 
+        const RADIUS_METER = 1000; 
     </script>
     <!-- ====================================================================== -->
 
@@ -56,7 +57,7 @@
         .btn:active { transform: scale(0.98); }
         .btn:disabled { background: #bdc3c7; cursor: not-allowed; box-shadow: none; opacity: 0.7; }
         .btn-keluar { background: linear-gradient(to right, #cb2d3e, #ef473a); }
-        .btn-pelawat { background: linear-gradient(to right, #11998e, #38ef7d); margin-top: 15px; } 
+        .btn-pelawat { background: linear-gradient(to right, #11998e, #38ef7d); margin-top: 15px; }
         .btn-cancel { background: #7f8c8d; margin-top: 10px; }
         
         #dashboardPanel { display: none; background: #fff; padding: 20px; border-radius: 15px; border: 1px solid #e1e4e8; margin-bottom: 20px; box-shadow: 0 5px 15px rgba(0,0,0,0.03); }
@@ -313,6 +314,7 @@
     let lastLat = 0, lastLng = 0;
     let currentList = []; 
     let isSubmitting = false; 
+    let isSyncing = false;
     
     // VARIABLES UNTUK AUTO-LOGIC
     let autoCheckoutTimer = null;
@@ -337,13 +339,22 @@
     window.addEventListener('online', () => {
         console.log("Internet dikesan! Memulakan sinkronisasi...");
         showSyncBar("Internet Kembali Pulih. Menyegerakkan data...", "#2ecc71");
-        if ('serviceWorker' in navigator && 'SyncManager' in window) {
-            navigator.serviceWorker.ready.then(sw => { return sw.sync.register('sync-attendance'); });
-        } else {
-            fetch('/sw.js'); 
-        }
         syncOfflineData();
     });
+
+    // LISTEN BILA APP DIBUKA SEMULA (VISIBILITY CHANGE)
+    document.addEventListener("visibilitychange", () => {
+        if (document.visibilityState === "visible") {
+            if (navigator.onLine) syncOfflineData(); // Terus hantar bila app dibuka
+            loadList(); // Refresh senarai
+            initBackgroundService(); // Re-activate wake lock jika perlu
+        }
+    });
+    
+    // HEARTBEAT SYNC SETIAP 15 SAAT (BACKUP)
+    setInterval(() => {
+        if (navigator.onLine) syncOfflineData();
+    }, 15000);
 
     window.addEventListener('offline', () => {
         showSyncBar("MOD OFFLINE: Data akan disimpan dalam telefon.", "#e74c3c");
@@ -358,10 +369,11 @@
     }
 
     function syncOfflineData() {
-        if (!navigator.onLine) return;
+        if (!navigator.onLine || isSyncing) return;
         let offlineQueue = JSON.parse(localStorage.getItem('ehadir_offline_queue') || "[]");
         if (offlineQueue.length === 0) return; 
 
+        isSyncing = true;
         showSyncBar("Menghantar " + offlineQueue.length + " data tertangguh...", "#3498db");
         let itemToSync = offlineQueue[0];
         if (!itemToSync.kategori || itemToSync.kategori === "undefined" || itemToSync.kategori === null) {
@@ -371,6 +383,7 @@
         fetch(API_URL, { method: "POST", body: JSON.stringify(itemToSync) })
         .then(response => response.json())
         .then(res => {
+            isSyncing = false;
             if (res.result === "success") {
                 offlineQueue.shift(); 
                 localStorage.setItem('ehadir_offline_queue', JSON.stringify(offlineQueue));
@@ -378,7 +391,7 @@
                 else { showSyncBar("? Semua data offline telah berjaya dihantar!", "#27ae60"); loadList(); }
             } else { showSyncBar("Ralat Server: " + res.msg, "#c0392b"); }
         })
-        .catch(err => { showSyncBar("Ralat Network. Akan cuba sebentar lagi.", "#e67e22"); });
+        .catch(err => { isSyncing = false; showSyncBar("Ralat Network. Akan cuba sebentar lagi.", "#e67e22"); });
     }
 
     function showModernAlert(title, msg, type, callback) {
