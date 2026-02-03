@@ -20,7 +20,7 @@
         const SCHOOL_LNG = 100.69911646577859; 
         
         // 4. Jarak Radius yang dibenarkan (dalam meter)
-        const RADIUS_METER = 5; 
+        const RADIUS_METER = 5
     </script>
     <!-- ====================================================================== -->
 
@@ -287,7 +287,7 @@
                 <button id="btnPelawatSubmit" class="btn btn-pelawat" onclick="hantarPelawat">
                     <img src="https://cdn-icons-png.flaticon.com/128/9402/9402342.png" class="icon-3d-std"> HANTAR DATA
                 </button>
-                <button class="btn btn-cancel" onclick="cancelPelawat()">BATAL</button>
+                <button class="btn btn-cancel" onclick="cancelPelawat">BATAL</button>
             </div>
 
             <div class="list-header">
@@ -634,6 +634,7 @@
             }
 
             localStorage.setItem('ehadir_session', JSON.stringify({nama: nama, kategori: kat, date: now.toISOString().slice(0,10)}));
+            localStorage.setItem('ehadir_last_action', Date.now()); 
             location.reload();
 
         } catch (error) {
@@ -667,6 +668,7 @@
                 }
                 
                 localStorage.removeItem('ehadir_session');
+                localStorage.setItem('ehadir_last_action', Date.now());
                 location.reload();
 
             } catch (error) {
@@ -765,6 +767,10 @@
                 let session = JSON.parse(localStorage.getItem('ehadir_session'));
                 let locked = localStorage.getItem('ehadir_locked_name');
                 let lockedKat = localStorage.getItem('ehadir_locked_kat');
+                
+                let lastAction = parseInt(localStorage.getItem('ehadir_last_action') || "0");
+                let timeDiff = Date.now() - lastAction;
+                const COOLDOWN = 600000; // 10 Minit
 
                 if (isInZone) {
                     // Masuk Zone
@@ -772,7 +778,7 @@
                     if(autoCheckoutTimer) { clearTimeout(autoCheckoutTimer); autoCheckoutTimer = null; warningCountdown = 10; }
                     
                     // Auto Check-In Logic
-                    if (!session && locked && lockedKat && !isSubmitting) {
+                    if (!session && locked && lockedKat && !isSubmitting && timeDiff > COOLDOWN) {
                         hantarMasuk(true);
                     }
                 } else {
@@ -860,4 +866,3 @@
 </script>
 </body>
 </html>
-
