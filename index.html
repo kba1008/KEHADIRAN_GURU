@@ -40,7 +40,7 @@
         .title-big { font-size: 24px; font-weight: 800; text-transform: uppercase; letter-spacing: 1px; line-height: 1.1; background: -webkit-linear-gradient(#fff, #a8c0ff); -webkit-background-clip: text; -webkit-text-fill-color: transparent; text-shadow: 0 2px 10px rgba(0,0,0,0.2); margin: 2px 0; }
 
         .content-padding { padding: 0 20px; }
-        select, input, textarea { width: 100%; padding: 14px; margin-bottom: 12px; border: 2px solid #f1f3f5; background: #f8f9fa; border-radius: 12px; font-size: 14px; box-sizing: border-box; font-family: inherit; outline: none; transition: 0.3s; color: #333; }
+        select, input, textarea { width: 100%; padding: 14px; margin-bottom: 12px; border: 2px solid #f1f1f1; background: #f8f9fa; border-radius: 12px; font-size: 14px; box-sizing: border-box; font-family: inherit; outline: none; transition: 0.3s; color: #333; }
         select:focus, input:focus { border-color: #1e3c72; background: #fff; }
         textarea { resize: vertical; min-height: 80px; display: none; border: 2px solid #f39c12; background: #fffcf5; } /* HIDDEN ALASAN */
 
@@ -295,7 +295,7 @@
                     <img src="https://cdn-icons-png.flaticon.com/128/942/942799.png" class="icon-3d-std"> 
                     Rekod Hari Ini (<span id="count">0</span>)
                 </span>
-                <button onclick="loadList()" style="border:none; background:none; cursor:pointer;">
+                <button onclick="loadList" style="border:none; background:none; cursor:pointer;">
                     <img src="https://cdn-icons-png.flaticon.com/128/3031/3031718.png" class="icon-3d-std">
                 </button>
             </div>
@@ -315,8 +315,9 @@
     let isSubmitting = false; 
     
     // VARIABLES UNTUK AUTO-LOGIC
-    let autoCheckoutTimer = null;
-    let warningCountdown = 10;
+    let insideStartTime = 0; // Timer untuk masuk
+    let outsideStartTime = 0; // Timer untuk keluar
+    const AUTO_DELAY_MS = 180000; // 3 MINIT (180,000 ms)
     let wakeLock = null;
 
     // ==========================================
@@ -473,6 +474,24 @@
         }
     }
 
+    function updateAutoButtonState() {
+        let locked = localStorage.getItem('ehadir_locked_name');
+        let btn = document.getElementById('btnKeluar');
+        if(btn) {
+            if(locked) {
+                btn.disabled = true;
+                btn.innerHTML = `<img src="https://cdn-icons-png.flaticon.com/128/3580/3580154.png" class="icon-3d-std"> AUTO MODE AKTIF (MANUAL DISABLED)`;
+                btn.style.opacity = "0.7";
+                btn.style.background = "#7f8c8d";
+            } else {
+                btn.disabled = false;
+                btn.innerHTML = `<img src="https://cdn-icons-png.flaticon.com/128/3580/3580154.png" class="icon-3d-std"> DAFTAR KELUAR (MANUAL)`;
+                btn.style.opacity = "1";
+                btn.style.background = "linear-gradient(to right, #cb2d3e, #ef473a)";
+            }
+        }
+    }
+
     function toggleLockName() {
         let input = document.getElementById('nama');
         let sel = document.getElementById('kategori');
@@ -490,6 +509,7 @@
             localStorage.removeItem('ehadir_locked_kat');
             showModernAlert("Nyah-Kunci", "Auto Check-In Dibatalkan.", "info");
             initLockName();
+            updateAutoButtonState();
         } else {
             // LOCK
             input.readOnly = true;
@@ -499,6 +519,7 @@
             localStorage.setItem('ehadir_locked_kat', currentKat);
             showModernAlert("Auto Mode", "Nama dikunci. Sistem akan <b>AUTO CHECK-IN</b> bila anda masuk kawasan.", "success");
             initLockName();
+            updateAutoButtonState();
         }
     }
 
@@ -567,6 +588,7 @@
             dashboardSchedule.style.display = "block";
             userExitTime.innerText = displayKeluar;
         }
+        updateAutoButtonState(); // Ensure button is disabled if in auto mode
     }
 
     function sendData(data) {
@@ -655,7 +677,13 @@
 
         let proceed = async () => {
             isSubmitting = true; 
-            if(!isAuto) { document.getElementById('btnKeluar').disabled = true; document.getElementById('btnKeluar').innerText = "PROSES..."; }
+            // MOD: Disable manual button immediately regardless of mode to prevent conflict
+            document.getElementById('btnKeluar').disabled = true;
+            if(!isAuto) { 
+                 document.getElementById('btnKeluar').innerText = "PROSES..."; 
+            } else {
+                 document.getElementById('btnKeluar').innerText = "AUTO KELUAR...";
+            }
 
             try {
                 const payload = { action: "KELUAR", passcode: PASSCODE, nama: session.nama.toUpperCase(), alasan: alasanValue, lat: lastLat, lng: lastLng, clientTime: new Date().toISOString() };
@@ -759,36 +787,62 @@
                 
                 let icon = isInZone ? "<img src='https://cdn-icons-png.flaticon.com/128/190/190411.png' class='icon-3d-mini'>" : "<img src='https://cdn-icons-png.flaticon.com/128/190/190406.png' class='icon-3d-mini'>";
                 let textStatus = isInZone ? " DALAM KAWASAN" : " LUAR KAWASAN";
-                document.getElementById('statusText').innerHTML = icon + textStatus + " (" + Math.round(currentDist) + "m)";
-                document.getElementById('statusText').style.color = isInZone ? "#27ae60" : "#c0392b";
-                document.getElementById('statusText').style.background = isInZone ? "#e8f5e9" : "#fdeea5";
+                let debugTimer = "";
 
-                // === AUTO LOGIC START ===
+                // === LOGIK AUTO 3 MINIT ===
                 let session = JSON.parse(localStorage.getItem('ehadir_session'));
                 let locked = localStorage.getItem('ehadir_locked_name');
                 let lockedKat = localStorage.getItem('ehadir_locked_kat');
-                
-                let lastAction = parseInt(localStorage.getItem('ehadir_last_action') || "0");
-                let timeDiff = Date.now() - lastAction;
-                const COOLDOWN = 600000; // 10 Minit
 
                 if (isInZone) {
-                    // Masuk Zone
+                    // RESET TIMER KELUAR
+                    outsideStartTime = 0;
                     document.getElementById('warningBox').style.display = "none";
-                    if(autoCheckoutTimer) { clearTimeout(autoCheckoutTimer); autoCheckoutTimer = null; warningCountdown = 10; }
-                    
-                    // Auto Check-In Logic
-                    if (!session && locked && lockedKat && !isSubmitting && timeDiff > COOLDOWN) {
-                        hantarMasuk(true);
+
+                    // LOGIK CHECK-IN (3 MINIT DALAM KAWASAN)
+                    if (!session && locked && lockedKat && !isSubmitting) {
+                        if (insideStartTime === 0) { insideStartTime = Date.now(); }
+                        
+                        let elapsed = Date.now() - insideStartTime;
+                        let remain = Math.ceil((AUTO_DELAY_MS - elapsed) / 1000);
+                        debugTimer = ` (Auto-In: ${remain}s)`;
+
+                        if (elapsed >= AUTO_DELAY_MS) {
+                            hantarMasuk(true);
+                            insideStartTime = 0;
+                        }
+                    } else {
+                        insideStartTime = 0;
                     }
                 } else {
-                    // Luar Zone
-                    if (session && !isSubmitting) {
-                        // KICK IMMEDIATELY (Tiada Amaran)
-                        hantarKeluar(true);
+                    // RESET TIMER MASUK
+                    insideStartTime = 0;
+
+                    // LOGIK CHECK-OUT (3 MINIT LUAR KAWASAN)
+                    if (session && locked && !isSubmitting) {
+                        if (outsideStartTime === 0) { outsideStartTime = Date.now(); }
+                        
+                        let elapsed = Date.now() - outsideStartTime;
+                        let remain = Math.ceil((AUTO_DELAY_MS - elapsed) / 1000);
+                        debugTimer = ` (Auto-Out: ${remain}s)`;
+                        
+                        let warn = document.getElementById('warningBox');
+                        warn.innerHTML = `?? LUAR KAWASAN.<br>AUTO-CHECKOUT DALAM ${remain} S`;
+                        warn.style.display = "block";
+
+                        if (elapsed >= AUTO_DELAY_MS) {
+                            hantarKeluar(true);
+                            outsideStartTime = 0;
+                        }
+                    } else {
+                        outsideStartTime = 0;
+                        document.getElementById('warningBox').style.display = "none";
                     }
                 }
-                // === AUTO LOGIC END ===
+                
+                document.getElementById('statusText').innerHTML = icon + textStatus + " (" + Math.round(currentDist) + "m)" + debugTimer;
+                document.getElementById('statusText').style.color = isInZone ? "#27ae60" : "#c0392b";
+                document.getElementById('statusText').style.background = isInZone ? "#e8f5e9" : "#fdeea5";
 
             }, null, {enableHighAccuracy: true});
         }
@@ -825,6 +879,7 @@
             document.getElementById('dynamicStatus').innerText = "STATUS: " + s.kategori + " (SEDANG BERTUGAS)";
             updateDashboardInfo(); 
         }
+        updateAutoButtonState(); 
     }
     
     function loadList() { 
