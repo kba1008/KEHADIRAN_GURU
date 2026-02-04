@@ -16,17 +16,17 @@
         const PASSCODE = "101010";
         
         // 3. Koordinat Lokasi (Ambil dari Google Maps)
-        const SCHOOL_LAT = 5.235820060008801; 
-        const SCHOOL_LNG = 100.68347003247865; 
+        const SCHOOL_LAT = 5.2278950602228; 
+        const SCHOOL_LNG = 100.6990857727084; 
         
         // 4. Jarak Radius yang dibenarkan (dalam meter)
-        const RADIUS_METER = 300; 
+        const RADIUS_METER = 10; 
 
         // 5. Anti-Spam Check-In: Berapa minit dalam kawasan baru auto-masuk? (Elak spam)
-        const MINIT_ANTI_SPAM_MASUK = 1;
+        const MINIT_ANTI_SPAM_MASUK = 5;
 
         // 6. Auto Checkout Delay: Berapa minit luar kawasan baru auto-keluar? (Smooth)
-        const MINIT_DELAY_KELUAR = 5;
+        const MINIT_DELAY_KELUAR = 10;
     </script>
     <!-- ====================================================================== -->
 
@@ -638,8 +638,12 @@
             }
             
             // NOTIFIKASI AUTO
-            if(isAuto && Notification.permission === "granted") {
-                new Notification("Auto Check-In Berjaya", { body: "Selamat Datang " + nama });
+            if(isAuto) {
+                showSyncBar("SELAMAT DATANG KE SK SELAMA (K)", "#27ae60");
+                if(Notification.permission === "granted") {
+                    let n = new Notification("INFO KEHADIRAN", { body: "SELAMAT DATANG KE SK SELAMA (K)" });
+                    setTimeout(() => n.close(), 3000);
+                }
             }
 
             localStorage.setItem('ehadir_session', JSON.stringify({nama: nama, kategori: kat, date: now.toISOString().slice(0,10)}));
@@ -671,8 +675,12 @@
                 const result = await sendData(payload);
                 
                 // NOTIFIKASI AUTO
-                if(isAuto && Notification.permission === "granted") {
-                    new Notification("Auto Check-Out", { body: "Anda telah keluar dari zon sekolah." });
+                if(isAuto) {
+                    showSyncBar("SEMOGA SELAMAT DALAM PERJALANAN ANDA", "#c0392b");
+                    if(Notification.permission === "granted") {
+                        let n = new Notification("INFO KEHADIRAN", { body: "SEMOGA SELAMAT DALAM PERJALANAN ANDA" });
+                        setTimeout(() => n.close(), 3000);
+                    }
                 }
                 
                 localStorage.removeItem('ehadir_session');
@@ -919,4 +927,3 @@
 </script>
 </body>
 </html>
-
