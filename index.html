@@ -769,12 +769,26 @@
     function monitorAutoLogic() {
         // Tukar minit ke milisaat
         let MS_IN_DELAY = (typeof MINIT_ANTI_SPAM_MASUK !== 'undefined' ? MINIT_ANTI_SPAM_MASUK : 5) * 60 * 1000;
-        let MS_OUT_DELAY = (typeof MINIT_DELAY_KELUAR !== 'undefined' ? MINIT_DELAY_KELUAR : 5) * 60 * 1000;
+        let MS_OUT_DELAY = (typeof MINIT_DELAY_KELUAR !== 'undefined' ? MINIT_DELAY_KELUAR : 10) * 60 * 1000;
 
         let session = JSON.parse(localStorage.getItem('ehadir_session'));
         let locked = localStorage.getItem('ehadir_locked_name');
         let lockedKat = localStorage.getItem('ehadir_locked_kat');
         let now = Date.now();
+
+        // 1. UPDATE UI STATUS (ASINGKAN DARI GPS CALLBACK)
+        let statusEl = document.getElementById('statusText');
+        if (isInZone) {
+             let icon = "<img src='https://cdn-icons-png.flaticon.com/128/190/190411.png' class='icon-3d-mini'>";
+             statusEl.innerHTML = icon + " DALAM KAWASAN (" + Math.round(currentDist) + "m)";
+             statusEl.style.color = "#27ae60";
+             statusEl.style.background = "#e8f5e9";
+        } else {
+             let icon = "<img src='https://cdn-icons-png.flaticon.com/128/190/190406.png' class='icon-3d-mini'>";
+             statusEl.innerHTML = icon + " LUAR KAWASAN (" + Math.round(currentDist) + "m)";
+             statusEl.style.color = "#c0392b";
+             statusEl.style.background = "#fdeea5";
+        }
 
         if (isInZone) {
             // === DALAM KAWASAN ===
@@ -786,8 +800,8 @@
                     let elapsed = now - inZoneStart;
                     let remainingSec = Math.ceil((MS_IN_DELAY - elapsed) / 1000);
                     
-                    // Update Status Text supaya user tahu
-                    document.getElementById('statusText').innerHTML = `<img src='https://cdn-icons-png.flaticon.com/128/190/190411.png' class='icon-3d-mini'> PENGESAHAN LOKASI (${remainingSec}s)`;
+                    // Update Status Text supaya user tahu (OVERRIDE UI)
+                    statusEl.innerHTML = `<img src='https://cdn-icons-png.flaticon.com/128/190/190411.png' class='icon-3d-mini'> PENGESAHAN LOKASI (${remainingSec}s)`;
                     
                     if (elapsed >= MS_IN_DELAY) {
                         hantarMasuk(true);
@@ -802,6 +816,8 @@
                 if (outZoneStart > 0) {
                     let elapsed = now - outZoneStart;
                     let remainingSec = Math.ceil((MS_OUT_DELAY - elapsed) / 1000);
+                    
+                    if (remainingSec < 0) remainingSec = 0;
 
                     // Show Warning Countdown
                     document.getElementById('warningBox').style.display = "block";
@@ -823,32 +839,18 @@
         if (navigator.geolocation) {
             navigator.geolocation.watchPosition(pos => {
                 lastLat = pos.coords.latitude; lastLng = pos.coords.longitude;
-                currentDist = calcDist(lastLat, lastLng, SCHOOL_LAT, SCHOOL_LNG); 
+                currentDist = calcDist(lastLat, lastLng, SCHOOL_LAT, SCHOOL_LNG); 1
                 
                 // Tentukan status masuk/keluar
-                let prevStatus = isInZone;
                 isInZone = (currentDist <= RADIUS_METER);
                 
-                // Kemaskini Timestamp Status
+                // Kemaskini Timestamp Status (Logic Sahaja, UI di monitorAutoLogic)
                 if (isInZone) {
-                    // Jika baru masuk atau belum set timer
                     if (!inZoneStart) inZoneStart = Date.now();
-                    outZoneStart = 0; // Reset timer keluar
-
-                    let icon = "<img src='https://cdn-icons-png.flaticon.com/128/190/190411.png' class='icon-3d-mini'>";
-                    document.getElementById('statusText').innerHTML = icon + " DALAM KAWASAN (" + Math.round(currentDist) + "m)";
-                    document.getElementById('statusText').style.color = "#27ae60";
-                    document.getElementById('statusText').style.background = "#e8f5e9";
-
+                    outZoneStart = 0; 
                 } else {
-                    // Jika baru keluar atau belum set timer
                     if (!outZoneStart) outZoneStart = Date.now();
-                    inZoneStart = 0; // Reset timer masuk
-
-                    let icon = "<img src='https://cdn-icons-png.flaticon.com/128/190/190406.png' class='icon-3d-mini'>";
-                    document.getElementById('statusText').innerHTML = icon + " LUAR KAWASAN (" + Math.round(currentDist) + "m)";
-                    document.getElementById('statusText').style.color = "#c0392b";
-                    document.getElementById('statusText').style.background = "#fdeea5";
+                    inZoneStart = 0; 
                 }
 
             }, null, {enableHighAccuracy: true});
