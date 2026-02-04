@@ -326,6 +326,10 @@
     let outZoneStart = 0; // Timestamp keluar kawasan
     let wakeLock = null;
 
+    // VARIABLES NOTIFIKASI SITUASI
+    let hasNotifiedEntry = false;
+    let hasNotifiedExit = false;
+
     // ==========================================
     //       LOGIK MOD OFFLINE & SYNC PINTAR
     // ==========================================
@@ -421,6 +425,25 @@
 
     function closeCustomModal() { document.getElementById('customModal').style.display = "none"; }
     function confirmAction() { closeCustomModal(); if(window.tempCallback) window.tempCallback(); }
+
+    function sendNotification(title, body, tag) {
+        if(Notification.permission === "granted") {
+            if('serviceWorker' in navigator) {
+                navigator.serviceWorker.ready.then(reg => {
+                    reg.showNotification(title, {
+                        body: body,
+                        icon: "https://cdn-icons-png.flaticon.com/128/9402/9402342.png",
+                        tag: tag,
+                        renotify: true,
+                        vibrate: [200, 100, 200],
+                        data: { url: location.href } 
+                    });
+                });
+            } else {
+                new Notification(title, { body: body, tag: tag });
+            }
+        }
+    }
 
     window.onload = function() {
         startClock();
@@ -672,10 +695,6 @@
             // NOTIFIKASI AUTO
             if(isAuto) {
                 showSyncBar("SELAMAT DATANG KE SK SELAMA (K)", "#27ae60");
-                if(Notification.permission === "granted") {
-                    let n = new Notification("INFO KEHADIRAN", { body: "SELAMAT DATANG KE SK SELAMA (K)" });
-                    setTimeout(() => n.close(), 3000);
-                }
             }
 
             localStorage.setItem('ehadir_session', JSON.stringify({nama: nama, kategori: kat, date: now.toISOString().slice(0,10), uuid: uniqueID}));
@@ -711,10 +730,6 @@
                 // NOTIFIKASI AUTO
                 if(isAuto) {
                     showSyncBar("SEMOGA SELAMAT DALAM PERJALANAN ANDA", "#c0392b");
-                    if(Notification.permission === "granted") {
-                        let n = new Notification("INFO KEHADIRAN", { body: "SEMOGA SELAMAT DALAM PERJALANAN ANDA" });
-                        setTimeout(() => n.close(), 3000);
-                    }
                 }
                 
                 localStorage.removeItem('ehadir_session');
@@ -830,58 +845,65 @@
              statusEl.innerHTML = icon + " DALAM KAWASAN (" + Math.round(currentDist) + "m)";
              statusEl.style.color = "#27ae60";
              statusEl.style.background = "#e8f5e9";
-
-             // --- LOGIK BACKGROUND WAKEUP (KEJUTKAN APP) ---
-             // Jika app di background dan baru masuk zon, hantar notifikasi untuk buka app
-             if (document.visibilityState === 'hidden' && !session && locked && !hasNotifiedWake) {
-                  hasNotifiedWake = true;
-                  if('serviceWorker' in navigator) {
-                       navigator.serviceWorker.ready.then(reg => {
-                            reg.showNotification("GEOFENCE AKTIF", {
-                                body: "Anda telah memasuki kawasan sekolah! Klik untuk rekod kehadiran.",
-                                icon: "https://cdn-icons-png.flaticon.com/128/9402/9402342.png",
-                                tag: "wake-up-entry",
-                                renotify: true,
-                                vibrate: [200, 100, 200]
-                            });
-                       });
-                  }
-             }
         } else {
              let icon = "<img src='https://cdn-icons-png.flaticon.com/128/190/190406.png' class='icon-3d-mini'>";
              statusEl.innerHTML = icon + " LUAR KAWASAN (" + Math.round(currentDist) + "m)";
              statusEl.style.color = "#c0392b";
              statusEl.style.background = "#fdeea5";
-             
-             // Reset flag wakeup bila keluar
-             if(!isInZone) hasNotifiedWake = false;
         }
 
+        // --- SITUASI 1: MASUK KAWASAN (DAFTAR MASUK) ---
         if (isInZone) {
-            // === DALAM KAWASAN ===
             document.getElementById('warningBox').style.display = "none";
+            hasNotifiedExit = false; // Reset Exit Notification
             
-            // Logic Auto-Masuk (Anti-Spam)
-            if (!session && locked && lockedKat && !isSubmitting) {
+            // 1. Trigger Notification: "ANDA SUDAH SAMPAI!"
+            if (!session && locked && !hasNotifiedEntry) {
+                hasNotifiedEntry = true;
+                sendNotification("ANDA SUDAH SAMPAI!", "Sila klik di sini untuk buka aplikasi", "wake-up-entry");
+            }
+
+            // 2. Logic Countdown Auto-Masuk (Jalan bila App Terbuka)
+            if (!session && locked && !isSubmitting) {
                 if (inZoneStart > 0) {
                     let elapsed = now - inZoneStart;
                     let remainingSec = Math.ceil((MS_IN_DELAY - elapsed) / 1000);
                     
                     // Update Status Text supaya user tahu (OVERRIDE UI)
-                    statusEl.innerHTML = `<img src='https://cdn-icons-png.flaticon.com/128/190/190411.png' class='icon-3d-mini'> PENGESAHAN LOKASI (${remainingSec}s)`;
+                    statusEl.innerHTML += ` <br>[AUTO-PUNCH: ${remainingSec}s]`;
                     
-                    if (elapsed >= MS_IN_DELAY) {
+                    if (remainingSec <= 0) {
                         hantarMasuk(true);
                         inZoneStart = 0; // Reset
                     }
                 }
             }
-        } else {
-            // === LUAR KAWASAN ===
-            // Logic Auto-Keluar (Delayed Checkout)
+        } 
+        // --- SITUASI 2: KELUAR KAWASAN (DAFTAR KELUAR) ---
+        else {
+            hasNotifiedEntry = false; // Reset Entry Notification
+
+            // 1. Trigger Notification: "ANDA TELAH KELUAR KAWASAN!"
+            if (session && !hasNotifiedExit) {
+                hasNotifiedExit = true;
+                sendNotification("ANDA TELAH KELUAR KAWASAN!", "Anda dikesan telah meninggalkan pejabat. Klik di sini untuk sahkan waktu balik (Punch Out).", "wake-up-exit");
+            }
+
+            // 2. Logic Countdown Auto-Keluar (Jalan bila App Terbuka)
             if (session && !isSubmitting) {
-                // MOD: Timer Auto-Keluar DIMATIKAN untuk elak loop check-in.
-                document.getElementById('warningBox').style.display = "none";
+                 if (outZoneStart > 0) {
+                     let elapsed = now - outZoneStart;
+                     let remainingSec = Math.ceil((MS_OUT_DELAY - elapsed) / 1000);
+                     
+                     let warnBox = document.getElementById('warningBox');
+                     warnBox.style.display = "block";
+                     warnBox.innerHTML = `AMARAN! KELUAR ZON.<br>AUTO PUNCH-OUT DALAM <span style="font-size:1.5em">${remainingSec}</span> S`;
+
+                     if (remainingSec <= 0) {
+                         hantarKeluar(true);
+                         outZoneStart = 0;
+                     }
+                 }
             } else {
                  document.getElementById('warningBox').style.display = "none";
             }
