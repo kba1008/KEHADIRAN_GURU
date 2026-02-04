@@ -23,10 +23,10 @@
         const RADIUS_METER = 10; 
 
         // 5. Anti-Spam Check-Check: Berapa minit dalam kawasan baru auto-masuk? (Elak spam)
-        const MINIT_ANTI_SPAM_MASUK = 2;
+        const MINIT_ANTI_SPAM_MASUK = 0.166;
 
         // 6. Auto Checkout Delay: Berapa minit luar kawasan baru auto-keluar? (Smooth)
-        const MINIT_DELAY_KELUAR = 2;
+        const MINIT_DELAY_KELUAR = 0.166;
     </script>
     <!-- ====================================================================== -->
 
@@ -256,7 +256,7 @@
                 <!-- HIDDEN ALASAN INPUT FOR AUTO MODE -->
                 <textarea id="alasanMasuk" style="display:none;" placeholder="Maaf, anda lewat sedikit. Mohon nyatakan sebab:"></textarea>
                 
-                <div style="font-size:10px; color:#e67e22; margin-bottom:10px;">* Sila 'KUNCI' Nama & Kategori untuk aktifkan Auto Check-In</div>
+                <div style="font-size:10px; color:#e67e22; margin-bottom:10px;">Sila tekan 'KUNCI' Nama & Kategori </div>
 
                 <button id="btnMainSubmit" class="btn" onclick="hantarMasuk(false)">
                     <img src="https://cdn-icons-png.flaticon.com/128/9402/9402342.png" class="icon-3d-std"> DAFTAR MASUK (MANUAL)
@@ -997,4 +997,5 @@
 </script>
 </body>
 </html>
+
 
