@@ -14,15 +14,15 @@
         
         // 2. Kata Laluan untuk Admin / Manual Override
         const PASSCODE = "101010";
-         //5.227691965160906, 100.69903377890643
+         
         // 3. Koordinat Lokasi (Ambil dari Google Maps)
-        const SCHOOL_LAT = 5.227691965160906; 
-        const SCHOOL_LNG = 100.69903377890643; 
+        const SCHOOL_LAT = 5.227700774485594; 
+        const SCHOOL_LNG = 100.69903276940211; 
         
         // 4. Jarak Radius yang dibenarkan (dalam meter)
-        const RADIUS_METER = 25; 
+        const RADIUS_METER = 10; 
 
-        // 5. Anti-Spam Check-In: Berapa minit dalam kawasan baru auto-masuk? (Elak spam)
+        // 5. Anti-Spam Check-Check: Berapa minit dalam kawasan baru auto-masuk? (Elak spam)
         const MINIT_ANTI_SPAM_MASUK = 2;
 
         // 6. Auto Checkout Delay: Berapa minit luar kawasan baru auto-keluar? (Smooth)
@@ -198,7 +198,7 @@
         </div>
 
         <div class="content-padding">
-            <div id="autoModeIndicator">?? MOD GEOPAGAR LATAR BELAKANG AKTIF</div>
+            <div id="autoModeIndicator">?? GEOFENCE SERVICE: ON (BACKGROUND READY)</div>
             
             <div id="statusText">
                 <img src="https://cdn-icons-png.flaticon.com/128/9077/9077975.png" class="icon-3d-mini spin-3d"> 
@@ -319,6 +319,7 @@
     let lastLat = 0, lastLng = 0;
     let currentList = []; 
     let isSubmitting = false; 
+    let hasNotifiedWake = false; // Flag untuk notifikasi sekali sehari
     
     // VARIABLES UNTUK AUTO-LOGIC & ANTI-SPAM
     let inZoneStart = 0; // Timestamp masuk kawasan
@@ -451,9 +452,11 @@
 
     // --- INIT BACKGROUND SERVICE (WAKELOCK & PERMISSIONS) ---
     async function initBackgroundService() {
-        // 1. Request Notification
-        if ("Notification" in window && Notification.permission !== "granted") {
-            await Notification.requestPermission();
+        // 1. Request Notification (UTAMA: Untuk 'Kejutkan' App)
+        if ("Notification" in window) {
+             if(Notification.permission !== "granted") {
+                  await Notification.requestPermission();
+             }
         }
         // 2. Request WakeLock (Keep Logic Alive)
         if ('wakeLock' in navigator) {
@@ -646,13 +649,23 @@
         if(!isAuto) { document.getElementById('btnMainSubmit').disabled = true; document.getElementById('btnMainSubmit').innerHTML = 'SEDANG HANTAR...'; }
 
         try {
-            const payload = { action: "MASUK", passcode: PASSCODE, nama: nama, kategori: kat, alasan: alasan, lat: lastLat, lng: lastLng, clientTime: now.toISOString() };
+            // GEN UUID UNTUK SESI UNIK
+            let uniqueID = Date.now().toString(36) + Math.random().toString(36).substr(2, 5);
+            const payload = { action: "MASUK", passcode: PASSCODE, nama: nama, kategori: kat, alasan: alasan, lat: lastLat, lng: lastLng, clientTime: now.toISOString(), uuid: uniqueID };
             
             const result = await sendData(payload);
 
             if (result.offline) {
                 if(!isAuto) alert("?? Offline: Data disimpan.");
             } else {
+                // Semak jika server reject (duplicate)
+                if (result.data && result.data.result === "error") {
+                     if(!isAuto) showModernAlert("Gagal", result.data.msg, "error");
+                     isSubmitting = false;
+                     document.getElementById('btnMainSubmit').disabled = false;
+                     document.getElementById('btnMainSubmit').innerHTML = `<img src="https://cdn-icons-png.flaticon.com/128/9402/9402342.png" class="icon-3d-std"> DAFTAR MASUK (MANUAL)`;
+                     return;
+                }
                 if(!isAuto) alert("? Berjaya daftar masuk!");
             }
             
@@ -665,7 +678,7 @@
                 }
             }
 
-            localStorage.setItem('ehadir_session', JSON.stringify({nama: nama, kategori: kat, date: now.toISOString().slice(0,10)}));
+            localStorage.setItem('ehadir_session', JSON.stringify({nama: nama, kategori: kat, date: now.toISOString().slice(0,10), uuid: uniqueID}));
             location.reload();
 
         } catch (error) {
@@ -683,13 +696,15 @@
         if (!session || !session.nama) { return; }
         
         let alasanValue = isAuto ? "AUTO CHECKOUT (KELUAR KAWASAN)" : "PULANG (MANUAL)";
+        // Get UUID from session if exists
+        let sessionUUID = session.uuid || "";
 
         let proceed = async () => {
             isSubmitting = true; 
             if(!isAuto) { document.getElementById('btnKeluar').disabled = true; document.getElementById('btnKeluar').innerText = "PROSES..."; }
 
             try {
-                const payload = { action: "KELUAR", passcode: PASSCODE, nama: session.nama.toUpperCase(), alasan: alasanValue, lat: lastLat, lng: lastLng, clientTime: new Date().toISOString() };
+                const payload = { action: "KELUAR", passcode: PASSCODE, nama: session.nama.toUpperCase(), alasan: alasanValue, lat: lastLat, lng: lastLng, clientTime: new Date().toISOString(), uuid: sessionUUID };
                 
                 const result = await sendData(payload);
                 
@@ -815,11 +830,31 @@
              statusEl.innerHTML = icon + " DALAM KAWASAN (" + Math.round(currentDist) + "m)";
              statusEl.style.color = "#27ae60";
              statusEl.style.background = "#e8f5e9";
+
+             // --- LOGIK BACKGROUND WAKEUP (KEJUTKAN APP) ---
+             // Jika app di background dan baru masuk zon, hantar notifikasi untuk buka app
+             if (document.visibilityState === 'hidden' && !session && locked && !hasNotifiedWake) {
+                  hasNotifiedWake = true;
+                  if('serviceWorker' in navigator) {
+                       navigator.serviceWorker.ready.then(reg => {
+                            reg.showNotification("GEOFENCE AKTIF", {
+                                body: "Anda telah memasuki kawasan sekolah! Klik untuk rekod kehadiran.",
+                                icon: "https://cdn-icons-png.flaticon.com/128/9402/9402342.png",
+                                tag: "wake-up-entry",
+                                renotify: true,
+                                vibrate: [200, 100, 200]
+                            });
+                       });
+                  }
+             }
         } else {
              let icon = "<img src='https://cdn-icons-png.flaticon.com/128/190/190406.png' class='icon-3d-mini'>";
              statusEl.innerHTML = icon + " LUAR KAWASAN (" + Math.round(currentDist) + "m)";
              statusEl.style.color = "#c0392b";
              statusEl.style.background = "#fdeea5";
+             
+             // Reset flag wakeup bila keluar
+             if(!isInZone) hasNotifiedWake = false;
         }
 
         if (isInZone) {
@@ -962,9 +997,3 @@
 </script>
 </body>
 </html>
-
-
-
-
-
-
