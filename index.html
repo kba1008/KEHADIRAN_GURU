@@ -14,10 +14,10 @@
         
         // 2. Kata Laluan untuk Admin / Manual Override
         const PASSCODE = "101010";
-        
+         
         // 3. Koordinat Lokasi (Ambil dari Google Maps)
-        const SCHOOL_LAT = 5.227716497033035; 
-        const SCHOOL_LNG = 100.69904742989108; 
+        const SCHOOL_LAT = 5.227700774485594; 
+        const SCHOOL_LNG = 100.69903276940211; 
         
         // 4. Jarak Radius yang dibenarkan (dalam meter)
         const RADIUS_METER = 10; 
@@ -689,6 +689,19 @@
             } catch (error) {
                 console.error(error);
                 isSubmitting = false;
+                
+                // --- MOD EDIT: FAIL-SAFE UNTUK AUTO CHECKOUT ---
+                // Jika error berlaku masa auto (internet slow dll), tetap force logout 
+                // supaya tak stuck bila user masuk balik zon.
+                if(isAuto) {
+                    localStorage.removeItem('ehadir_session');
+                    location.reload();
+                } else {
+                    document.getElementById('btnKeluar').disabled = false;
+                    document.getElementById('btnKeluar').innerHTML = `<img src="https://cdn-icons-png.flaticon.com/128/3580/3580154.png" class="icon-3d-std"> DAFTAR KELUAR (MANUAL)`;
+                    alert("Ralat semasa keluar. Sila cuba lagi.");
+                }
+                // ------------------------------------------------
             }
         };
 
@@ -929,6 +942,3 @@
 </script>
 </body>
 </html>
-
-
-
