@@ -16,11 +16,11 @@
         const PASSCODE = "101010";
          
         // 3. Koordinat Lokasi (Ambil dari Google Maps)
-        const SCHOOL_LAT = 5.227700774485594; 
-        const SCHOOL_LNG = 100.69903276940211; 
+        const SCHOOL_LAT = 5.235868549401296; 
+        const SCHOOL_LNG = 100.68348243641016; 
         
         // 4. Jarak Radius yang dibenarkan (dalam meter)
-        const RADIUS_METER = 10; 
+        const RADIUS_METER = 300; 
 
         // 5. Anti-Spam Check-In: Berapa minit dalam kawasan baru auto-masuk? (Elak spam)
         const MINIT_ANTI_SPAM_MASUK = 2;
@@ -440,8 +440,13 @@
         loadList();
         setInterval(updateLiveTimers, 1000);
         
-        // Mulakan logik auto monitor setiap saat
-        setInterval(monitorAutoLogic, 1000);
+        // --- UBAH SUAI SURGIKAL: WEB WORKER UNTUK ELAK THROTTLING DI LATAR BELAKANG ---
+        // Menggantikan setInterval biasa yang akan 'beku' jika phone dikunci
+        const workerBlob = new Blob(["self.onmessage = function() { setInterval(function(){ self.postMessage('tick'); }, 1000); }"], { type: "text/javascript" });
+        const worker = new Worker(URL.createObjectURL(workerBlob));
+        worker.onmessage = function(e) { monitorAutoLogic(); };
+        worker.postMessage("start");
+        // ----------------------------------------------------------------------------
     };
 
     // --- INIT BACKGROUND SERVICE (WAKELOCK & PERMISSIONS) ---
@@ -452,11 +457,25 @@
         }
         // 2. Request WakeLock (Keep Logic Alive)
         if ('wakeLock' in navigator) {
-            try {
-                wakeLock = await navigator.wakeLock.request('screen');
-                document.getElementById('autoModeIndicator').style.display = 'block';
-                wakeLock.addEventListener('release', () => { console.log('Wake Lock Released'); });
-            } catch (err) { console.error(`${err.name}, ${err.message}`); }
+            const requestLock = async () => {
+                try {
+                    wakeLock = await navigator.wakeLock.request('screen');
+                    document.getElementById('autoModeIndicator').style.display = 'block';
+                    wakeLock.addEventListener('release', () => { console.log('Wake Lock Released'); });
+                } catch (err) { console.error(`${err.name}, ${err.message}`); }
+            };
+            
+            await requestLock();
+            
+            // Re-acquire lock on visibility change (Bila user minimize/maximize)
+            document.addEventListener('visibilitychange', async () => {
+                if (wakeLock !== null && document.visibilityState === 'visible') {
+                    await requestLock();
+                } else {
+                     // Cuba paksa lock dalam background (bergantung pada OS)
+                     await requestLock();
+                }
+            });
         }
     }
 
@@ -850,6 +869,7 @@
 
     function startRadar() {
         if (navigator.geolocation) {
+            // --- OPTIMASI: FORCE GPS AGAR LEBIH AGRESIF DI BACKGROUND ---
             navigator.geolocation.watchPosition(pos => {
                 lastLat = pos.coords.latitude; lastLng = pos.coords.longitude;
                 currentDist = calcDist(lastLat, lastLng, SCHOOL_LAT, SCHOOL_LNG); 1
@@ -866,7 +886,7 @@
                     inZoneStart = 0; 
                 }
 
-            }, null, {enableHighAccuracy: true});
+            }, null, {enableHighAccuracy: true, maximumAge: 0, timeout: 5000});
         }
     }
 
