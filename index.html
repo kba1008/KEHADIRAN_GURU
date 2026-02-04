@@ -382,7 +382,7 @@
                 offlineQueue.shift(); 
                 localStorage.setItem('ehadir_offline_queue', JSON.stringify(offlineQueue));
                 if (offlineQueue.length > 0) { syncOfflineData(); } 
-                else { showSyncBar("? Semua data offline telah berjaya dihantar!", "#27ae60"); loadList(); }
+                else { showSyncBar("Semua data offline telah berjaya dihantar!", "#27ae60"); loadList(); }
             } else { showSyncBar("Ralat Server: " + res.msg, "#c0392b"); }
         })
         .catch(err => { showSyncBar("Ralat Network. Akan cuba sebentar lagi.", "#e67e22"); });
@@ -666,7 +666,7 @@
                      document.getElementById('btnMainSubmit').innerHTML = `<img src="https://cdn-icons-png.flaticon.com/128/9402/9402342.png" class="icon-3d-std"> DAFTAR MASUK (MANUAL)`;
                      return;
                 }
-                if(!isAuto) alert("? Berjaya daftar masuk!");
+                if(!isAuto) alert("Berjaya daftar masuk!");
             }
             
             // NOTIFIKASI AUTO
@@ -766,7 +766,7 @@
         try {
             const payload = { action: "MASUK", passcode: PASSCODE, kategori: "PELAWAT", nama: namaPelawat, fotoBase64: foto, lat: lastLat, lng: lastLng, clientTime: new Date().toISOString() };
             await sendData(payload);
-            alert("? Data pelawat berjaya dihantar!");
+            alert("Data pelawat berjaya dihantar!");
             location.reload();
         } catch (error) {
             console.error(error);
@@ -997,6 +997,7 @@
 </script>
 </body>
 </html>
+
 
 
 
