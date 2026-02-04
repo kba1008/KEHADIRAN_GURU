@@ -156,7 +156,7 @@
 
     <div id="customModal">
         <div class="custom-modal-content">
-            <span id="modalIcon" class="modal-icon-top">??</span>
+            <span id="modalIcon" class="modal-icon-top"></span>
             <div id="modalTitle" class="modal-title">Tajuk</div>
             <div id="modalMsg" class="modal-msg">Mesej di sini...</div>
             <div class="modal-btn-row" id="modalBtnRow">
@@ -242,7 +242,7 @@
                     <option value="GURU">GURU</option>
                     <option value="AKP">AKP</option>
                     <option value="KEBERSIHAN">KEBERSIHAN</option>
-                    <option value="PELAWAT">?? PELAWAT (AWAM)</option>
+                    <option value="PELAWAT">PELAWAT (AWAM)</option>
                 </select>
                 
                 <!-- INPUT NAMA WITH LOCK BUTTON -->
@@ -400,20 +400,20 @@
         mMsg.innerHTML = msg; 
         
         if(type === 'error') {
-            mIcon.innerText = "??"; mTitle.style.color = "#c0392b";
+            mIcon.innerText = ""; mTitle.style.color = "#c0392b";
             mBtns.innerHTML = `<button class="modal-btn btn-ok" onclick="closeCustomModal()">Faham</button>`;
         } else if(type === 'success') {
             mIcon.innerText = "?"; mTitle.style.color = "#27ae60";
             mBtns.innerHTML = `<button class="modal-btn btn-ok" onclick="closeCustomModal()">Terbaik</button>`;
         } else if(type === 'info') {
-            mIcon.innerText = "??"; mTitle.style.color = "#2980b9";
+            mIcon.innerText = ""; mTitle.style.color = "#2980b9";
             mBtns.innerHTML = `<button class="modal-btn btn-ok" onclick="closeCustomModal()">OK</button>`;
         } else if(type === 'confirm') {
-            mIcon.innerText = "??"; mTitle.style.color = "#1e3c72";
+            mIcon.innerText = ""; mTitle.style.color = "#1e3c72";
             window.tempCallback = callback;
             mBtns.innerHTML = `<button class="modal-btn btn-cancel-modal" onclick="closeCustomModal()">Batal</button><button class="modal-btn btn-ok" onclick="confirmAction()">Teruskan</button>`;
         } else {
-            mIcon.innerText = "??"; mTitle.style.color = "#2c3e50";
+            mIcon.innerText = ""; mTitle.style.color = "#2c3e50";
             mBtns.innerHTML = `<button class="modal-btn btn-ok" onclick="closeCustomModal()">Tutup</button>`;
         }
         modal.style.display = "flex";
@@ -656,7 +656,7 @@
             const result = await sendData(payload);
 
             if (result.offline) {
-                if(!isAuto) alert("?? Offline: Data disimpan.");
+                if(!isAuto) alert(" Offline: Data disimpan.");
             } else {
                 // Semak jika server reject (duplicate)
                 if (result.data && result.data.result === "error") {
@@ -997,6 +997,7 @@
 </script>
 </body>
 </html>
+
 
 
 
