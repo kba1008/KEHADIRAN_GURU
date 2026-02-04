@@ -27,6 +27,9 @@
 
         // 6. Auto Checkout Delay: Berapa minit luar kawasan baru auto-keluar? (Smooth)
         const MINIT_DELAY_KELUAR = 0.1;
+
+        // 7. Jarak Reset Auto-In: Pengguna perlu keluar sejauh ini (meter) untuk aktifkan semula auto-in selepas check-out
+        const RADIUS_RESET_AUTO_IN = 300;
     </script>
     <!-- ====================================================================== -->
 
@@ -732,6 +735,9 @@
                     showSyncBar("SEMOGA SELAMAT DALAM PERJALANAN ANDA", "#c0392b");
                 }
                 
+                // SET BLOCKING SUPAYA TAK AUTO-IN TERUS BILA RELOAD
+                localStorage.setItem('ehadir_auto_in_blocked', 'true');
+                
                 localStorage.removeItem('ehadir_session');
                 location.reload();
 
@@ -840,11 +846,19 @@
 
         // 1. UPDATE UI STATUS (ASINGKAN DARI GPS CALLBACK)
         let statusEl = document.getElementById('statusText');
+        let isBlocked = localStorage.getItem('ehadir_auto_in_blocked'); // NEW CHECK
+
         if (isInZone) {
              let icon = "<img src='https://cdn-icons-png.flaticon.com/128/190/190411.png' class='icon-3d-mini'>";
              statusEl.innerHTML = icon + " DALAM KAWASAN (" + Math.round(currentDist) + "m)";
              statusEl.style.color = "#27ae60";
              statusEl.style.background = "#e8f5e9";
+             
+             // NEW: BLOCK LOGIC
+             if (isBlocked) {
+                 statusEl.innerHTML += `<br><span style="font-size:9px; color:#e67e22;">AUTO-IN DIGANTUNG (KELUAR > ${RADIUS_RESET_AUTO_IN}M UNTUK RESET)</span>`;
+                 return; // STOP LOGIC HERE
+             }
         } else {
              let icon = "<img src='https://cdn-icons-png.flaticon.com/128/190/190406.png' class='icon-3d-mini'>";
              statusEl.innerHTML = icon + " LUAR KAWASAN (" + Math.round(currentDist) + "m)";
@@ -920,6 +934,11 @@
                 // Tentukan status masuk/keluar
                 isInZone = (currentDist <= RADIUS_METER);
                 
+                // NEW: RESET BLOCK LOGIC
+                if (currentDist > RADIUS_RESET_AUTO_IN) {
+                    localStorage.removeItem('ehadir_auto_in_blocked');
+                }
+
                 // Kemaskini Timestamp Status (Logic Sahaja, UI di monitorAutoLogic)
                 if (isInZone) {
                     if (!inZoneStart) inZoneStart = Date.now();
