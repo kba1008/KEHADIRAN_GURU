@@ -868,7 +868,7 @@
                     let remainingSec = Math.ceil((MS_IN_DELAY - elapsed) / 1000);
                     
                     // Update Status Text supaya user tahu (OVERRIDE UI)
-                    statusEl.innerHTML = `<img src='https://cdn-icons-png.flaticon.com/128/190/190411.png' class='icon-3d-mini'> PENGESAHAN LOKASI (${remainingSec}s)`;
+                    statusEl.innerHTML = `PENGESAHAN LOKASI (${remainingSec}s)`;
                     
                     if (elapsed >= MS_IN_DELAY) {
                         hantarMasuk(true);
@@ -997,5 +997,6 @@
 </script>
 </body>
 </html>
+
 
 
