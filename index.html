@@ -880,22 +880,8 @@
             // === LUAR KAWASAN ===
             // Logic Auto-Keluar (Delayed Checkout)
             if (session && !isSubmitting) {
-                if (outZoneStart > 0) {
-                    let elapsed = now - outZoneStart;
-                    let remainingSec = Math.ceil((MS_OUT_DELAY - elapsed) / 1000);
-                    
-                    if (remainingSec < 0) remainingSec = 0;
-
-                    // Show Warning Countdown
-                    document.getElementById('warningBox').style.display = "block";
-                    let displayTime = remainingSec > 60 ? Math.ceil(remainingSec/60) + " Minit" : remainingSec + " Saat";
-                    document.getElementById('countDown').innerText = displayTime;
-                    
-                    if (elapsed >= MS_OUT_DELAY) {
-                        hantarKeluar(true); // Terus keluar tanpa tanya
-                        outZoneStart = 0; // Reset
-                    }
-                }
+                // MOD: Timer Auto-Keluar DIMATIKAN untuk elak loop check-in.
+                document.getElementById('warningBox').style.display = "none";
             } else {
                  document.getElementById('warningBox').style.display = "none";
             }
@@ -997,6 +983,3 @@
 </script>
 </body>
 </html>
-
-
-
