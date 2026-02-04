@@ -23,10 +23,10 @@
         const RADIUS_METER = 10; 
 
         // 5. Anti-Spam Check-Check: Berapa minit dalam kawasan baru auto-masuk? (Elak spam)
-        const MINIT_ANTI_SPAM_MASUK = 0.166;
+        const MINIT_ANTI_SPAM_MASUK = 2;
 
         // 6. Auto Checkout Delay: Berapa minit luar kawasan baru auto-keluar? (Smooth)
-        const MINIT_DELAY_KELUAR = 0.166;
+        const MINIT_DELAY_KELUAR = 2;
     </script>
     <!-- ====================================================================== -->
 
@@ -39,7 +39,7 @@
         .container { background: white; padding: 0; border-radius: 25px; width: 100%; max-width: 420px; text-align: center; position: relative; box-shadow: 0 15px 35px rgba(0,0,0,0.1); overflow: hidden; padding-bottom: 30px; }
         
         .header-bg { background: linear-gradient(to right, #141e30, #243b55); padding: 15px 20px 30px 20px; color: white; border-radius: 0 0 25px 25px; box-shadow: 0 10px 25px rgba(0,0,0,0.2); margin-bottom: 25px; position: relative; }
-        .top-bar-row { display: flex; justify-content: center; align-items: center; gap: 10px; font-size: 11px; color: #cfd8dc; font-weight: 400; letter-spacing: 0.5px; padding-bottom: 15px; border-bottom: 1px solid rgba(255,255,255,0.1); margin-bottom: 20px; white-space: nowrap; }
+        .top-bar-row { display: flex; justify-content: center; align-items: center; gap: 10px; font-size: 11px; color: #cfd8dc; font-weight: 400; letter-spacing: 0.5px; padding-bottom: 15px; border-bottom: 1px solid rgba(255,255,255,0.1); margin-bottom: 20px; white-space: nowrap; text-transform: uppercase; }
         
         .main-title-block { display: flex; flex-direction: column; align-items: center; }
         .title-small { font-size: 10px; letter-spacing: 3px; text-transform: uppercase; color: #6dd5ed; margin-bottom: 5px; font-weight: 600; }
@@ -152,11 +152,11 @@
 <body oncontextmenu="return false;"> 
 
     <div id="syncStatusBar"></div>
-    <div id="warningBox">KELUAR ZON.<br>AUTO-CHECKOUT DALAM <span id="countDown">10</span>S</div>
+    <div id="warningBox">?? AMARAN! KELUAR ZON.<br>AUTO-CHECKOUT DALAM <span id="countDown">10</span>S</div>
 
     <div id="customModal">
         <div class="custom-modal-content">
-            <span id="modalIcon" class="modal-icon-top"></span>
+            <span id="modalIcon" class="modal-icon-top">??</span>
             <div id="modalTitle" class="modal-title">Tajuk</div>
             <div id="modalMsg" class="modal-msg">Mesej di sini...</div>
             <div class="modal-btn-row" id="modalBtnRow">
@@ -175,17 +175,17 @@
         <div class="header-bg">
             <div class="top-bar-row">
                 <span>
-                    <img src="https://cdn-icons-png.flaticon.com/128/942/942748.png" class="icon-3d-mini"> 
+                    <img src="https://cdn-icons-png.flaticon.com/128/4250/4250320.png" class="icon-3d-mini"> 
                     <span id="dateDisplay">--/--/--</span>
                 </span> 
                 <span>|</span> 
                 <span>
-                    <img src="https://cdn-icons-png.flaticon.com/128/2928/2928756.png" class="icon-3d-mini"> 
+                    <img src="https://cdn-icons-png.flaticon.com/128/2088/2088617.png" class="icon-3d-mini"> 
                     <span id="clockDisplay">--:--</span>
                 </span> 
                 <span>|</span> 
                 <span>
-                    <img src="https://cdn-icons-png.flaticon.com/128/7786/7786982.png" class="icon-3d-mini"> 
+                    <img src="https://cdn-icons-png.flaticon.com/128/4358/4358667.png" class="icon-3d-mini"> 
                     <span id="hijriDisplay">...</span>
                 </span>
             </div>
@@ -198,7 +198,7 @@
         </div>
 
         <div class="content-padding">
-            <div id="autoModeIndicator">MODE AUTO DI AKTIFKAN</div>
+            <div id="autoModeIndicator">?? GEOFENCE SERVICE: ON (BACKGROUND READY)</div>
             
             <div id="statusText">
                 <img src="https://cdn-icons-png.flaticon.com/128/9077/9077975.png" class="icon-3d-mini spin-3d"> 
@@ -242,7 +242,7 @@
                     <option value="GURU">GURU</option>
                     <option value="AKP">AKP</option>
                     <option value="KEBERSIHAN">KEBERSIHAN</option>
-                    <option value="PELAWAT">PELAWAT (AWAM)</option>
+                    <option value="PELAWAT">?? PELAWAT (AWAM)</option>
                 </select>
                 
                 <!-- INPUT NAMA WITH LOCK BUTTON -->
@@ -256,7 +256,7 @@
                 <!-- HIDDEN ALASAN INPUT FOR AUTO MODE -->
                 <textarea id="alasanMasuk" style="display:none;" placeholder="Maaf, anda lewat sedikit. Mohon nyatakan sebab:"></textarea>
                 
-                <div style="font-size:10px; color:#e67e22; margin-bottom:10px;">* Sila 'KUNCI' Nama & Kategori untuk aktifkan MOD AUTO</div>
+                <div style="font-size:10px; color:#e67e22; margin-bottom:10px;">* Sila 'KUNCI' Nama & Kategori untuk aktifkan Auto Check-In</div>
 
                 <button id="btnMainSubmit" class="btn" onclick="hantarMasuk(false)">
                     <img src="https://cdn-icons-png.flaticon.com/128/9402/9402342.png" class="icon-3d-std"> DAFTAR MASUK (MANUAL)
@@ -382,7 +382,7 @@
                 offlineQueue.shift(); 
                 localStorage.setItem('ehadir_offline_queue', JSON.stringify(offlineQueue));
                 if (offlineQueue.length > 0) { syncOfflineData(); } 
-                else { showSyncBar("Semua data offline telah berjaya dihantar!", "#27ae60"); loadList(); }
+                else { showSyncBar("? Semua data offline telah berjaya dihantar!", "#27ae60"); loadList(); }
             } else { showSyncBar("Ralat Server: " + res.msg, "#c0392b"); }
         })
         .catch(err => { showSyncBar("Ralat Network. Akan cuba sebentar lagi.", "#e67e22"); });
@@ -400,20 +400,20 @@
         mMsg.innerHTML = msg; 
         
         if(type === 'error') {
-            mIcon.innerText = ""; mTitle.style.color = "#c0392b";
+            mIcon.innerText = "??"; mTitle.style.color = "#c0392b";
             mBtns.innerHTML = `<button class="modal-btn btn-ok" onclick="closeCustomModal()">Faham</button>`;
         } else if(type === 'success') {
             mIcon.innerText = "?"; mTitle.style.color = "#27ae60";
             mBtns.innerHTML = `<button class="modal-btn btn-ok" onclick="closeCustomModal()">Terbaik</button>`;
         } else if(type === 'info') {
-            mIcon.innerText = ""; mTitle.style.color = "#2980b9";
+            mIcon.innerText = "??"; mTitle.style.color = "#2980b9";
             mBtns.innerHTML = `<button class="modal-btn btn-ok" onclick="closeCustomModal()">OK</button>`;
         } else if(type === 'confirm') {
-            mIcon.innerText = ""; mTitle.style.color = "#1e3c72";
+            mIcon.innerText = "??"; mTitle.style.color = "#1e3c72";
             window.tempCallback = callback;
             mBtns.innerHTML = `<button class="modal-btn btn-cancel-modal" onclick="closeCustomModal()">Batal</button><button class="modal-btn btn-ok" onclick="confirmAction()">Teruskan</button>`;
         } else {
-            mIcon.innerText = ""; mTitle.style.color = "#2c3e50";
+            mIcon.innerText = "??"; mTitle.style.color = "#2c3e50";
             mBtns.innerHTML = `<button class="modal-btn btn-ok" onclick="closeCustomModal()">Tutup</button>`;
         }
         modal.style.display = "flex";
@@ -656,7 +656,7 @@
             const result = await sendData(payload);
 
             if (result.offline) {
-                if(!isAuto) alert(" Offline: Data disimpan.");
+                if(!isAuto) alert("?? Offline: Data disimpan.");
             } else {
                 // Semak jika server reject (duplicate)
                 if (result.data && result.data.result === "error") {
@@ -666,7 +666,7 @@
                      document.getElementById('btnMainSubmit').innerHTML = `<img src="https://cdn-icons-png.flaticon.com/128/9402/9402342.png" class="icon-3d-std"> DAFTAR MASUK (MANUAL)`;
                      return;
                 }
-                if(!isAuto) alert("Berjaya daftar masuk!");
+                if(!isAuto) alert("? Berjaya daftar masuk!");
             }
             
             // NOTIFIKASI AUTO
@@ -766,7 +766,7 @@
         try {
             const payload = { action: "MASUK", passcode: PASSCODE, kategori: "PELAWAT", nama: namaPelawat, fotoBase64: foto, lat: lastLat, lng: lastLng, clientTime: new Date().toISOString() };
             await sendData(payload);
-            alert("Data pelawat berjaya dihantar!");
+            alert("? Data pelawat berjaya dihantar!");
             location.reload();
         } catch (error) {
             console.error(error);
@@ -868,7 +868,7 @@
                     let remainingSec = Math.ceil((MS_IN_DELAY - elapsed) / 1000);
                     
                     // Update Status Text supaya user tahu (OVERRIDE UI)
-                    statusEl.innerHTML = `PENGESAHAN LOKASI (${remainingSec}s)`;
+                    statusEl.innerHTML = `<img src='https://cdn-icons-png.flaticon.com/128/190/190411.png' class='icon-3d-mini'> PENGESAHAN LOKASI (${remainingSec}s)`;
                     
                     if (elapsed >= MS_IN_DELAY) {
                         hantarMasuk(true);
@@ -943,7 +943,7 @@
             let hDay = parts.find(p => p.type === 'day').value;
             let hMonthIndex = parseInt(parts.find(p => p.type === 'month').value) - 1; 
             let hYear = parts.find(p => p.type === 'year').value.split(" ")[0];
-            document.getElementById('hijriDisplay').innerText = `${hDay} ${monthNames[hMonthIndex]||""} ${hYear}`;
+            document.getElementById('hijriDisplay').innerText = `${hDay} ${monthNames[hMonthIndex]||("")} ${hYear}`;
         } catch(e) { document.getElementById('hijriDisplay').innerText = "Kalendar Islam"; }
     }
 
@@ -997,10 +997,3 @@
 </script>
 </body>
 </html>
-
-
-
-
-
-
-
