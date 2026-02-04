@@ -20,7 +20,7 @@
         const SCHOOL_LNG = 100.69903276940211; 
         
         // 4. Jarak Radius yang dibenarkan (dalam meter)
-        const RADIUS_METER = 200; 
+        const RADIUS_METER = 10; 
 
         // 5. Anti-Spam Check-Check: Berapa minit dalam kawasan baru auto-masuk? (Elak spam)
         const MINIT_ANTI_SPAM_MASUK = 0.1;
@@ -73,9 +73,23 @@
         .locked-msg { font-size: 11px; color: #95a5a6; margin-bottom: 15px; }
         
         #pelawatPanel { display: none; border: 2px dashed #27ae60; padding: 15px; border-radius: 15px; background: #f0fdf4; margin-bottom: 20px; }
-        .cam-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin: 10px 0; }
-        .cam-btn { background: #34495e; color: white; padding: 15px 5px; border-radius: 10px; font-size: 11px; cursor: pointer; display: flex; flex-direction: column; align-items: center; justify-content: center; border: 1px solid #ccc; min-height: 70px; }
-        .cam-icon { width: 28px; height: 28px; margin-bottom: 5px; filter: drop-shadow(0 2px 2px rgba(0,0,0,0.3)); }
+        
+        /* STYLO GIANT CAMERA CSS */
+        .giant-cam-btn { 
+            width: 100%; height: 160px; 
+            background: linear-gradient(135deg, #134e5e, #71b280); 
+            border-radius: 20px; 
+            display: flex; flex-direction: column; align-items: center; justify-content: center; 
+            box-shadow: 0 10px 20px rgba(0,0,0,0.15); 
+            cursor: pointer; transition: 0.2s; border: 2px solid rgba(255,255,255,0.3);
+            position: relative; overflow: hidden;
+        }
+        .giant-cam-btn:active { transform: scale(0.96); }
+        .giant-cam-icon { width: 70px; height: 70px; margin-bottom: 10px; filter: drop-shadow(0 2px 5px rgba(0,0,0,0.2)); }
+        .giant-cam-text { font-size: 12px; font-weight: 800; color: white; letter-spacing: 1.5px; text-transform: uppercase; }
+        .giant-pulse { animation: pulseGlow 2s infinite; }
+        @keyframes pulseGlow { 0% { box-shadow: 0 0 0 0 rgba(113, 178, 128, 0.4); } 70% { box-shadow: 0 0 0 10px rgba(113, 178, 128, 0); } 100% { box-shadow: 0 0 0 0 rgba(113, 178, 128, 0); } }
+
         #previewImg { width: 100%; margin-top: 10px; border-radius: 10px; display: none; border: 2px solid #333; max-height: 250px; object-fit: cover; }
         
         .list-header { display: flex; justify-content: space-between; align-items: center; margin-top: 25px; border-bottom: 2px solid #f1f1f1; padding-bottom: 10px; margin-bottom: 10px; }
@@ -273,21 +287,11 @@
                 <p style="font-size:11px; color:#666; margin-bottom:15px;">Sila ambil gambar & isi nama pelawat.</p>
                 <input type="text" id="namaPelawatInput" placeholder="NAMA PENUH PELAWAT" style="text-transform:uppercase;">
                 
-                <div class="cam-grid">
-                    <label class="cam-btn">
-                        <img src="https://cdn-icons-png.flaticon.com/128/3687/3687416.png" class="cam-icon">
-                        BELAKANG
+                <div style="margin: 15px 0;">
+                    <label class="giant-cam-btn giant-pulse">
+                        <img src="https://cdn-icons-png.flaticon.com/128/3687/3687416.png" class="giant-cam-icon">
+                        <span class="giant-cam-text">SNAP FOTO</span>
                         <input type="file" accept="image/*" capture="environment" style="display:none" onchange="processImage(this)">
-                    </label>
-                    <label class="cam-btn" style="background:#e67e22;">
-                        <img src="https://cdn-icons-png.flaticon.com/128/3687/3687416.png" class="cam-icon">
-                        DEPAN
-                        <input type="file" accept="image/*" capture="user" style="display:none" onchange="processImage(this)">
-                    </label>
-                    <label class="cam-btn" style="background:#7f8c8d; grid-column: span 2;">
-                        <img src="https://cdn-icons-png.flaticon.com/128/1042/1042339.png" class="cam-icon">
-                        KAMERA (OPERA/LAIN)
-                        <input type="file" accept="image/*" style="display:none" onchange="processImage(this)">
                     </label>
                 </div>
 
@@ -1024,6 +1028,3 @@
 </script>
 </body>
 </html>
-
-
-
