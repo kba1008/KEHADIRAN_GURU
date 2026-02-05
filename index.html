@@ -763,7 +763,8 @@
         if (isAuto) {
             nama = localStorage.getItem('ehadir_locked_name');
             kat = localStorage.getItem('ehadir_locked_kat');
-        } else {
+        }
+        else {
             nama = document.getElementById('nama').value.toUpperCase().trim();
             kat = document.getElementById('kategori').value;
         }
@@ -1121,10 +1122,9 @@
             let offlineClass = i.isOffline ? "offline-item" : "";
             let offlineIcon = i.isOffline ? `<img src="https://cdn-icons-png.flaticon.com/128/159/159604.png" class="icon-3d-mini" title="Menunggu Sync"> ` : "";
             
-            // LOGIK AVATAR
-            let userAvatar = i.avatar && i.avatar !== "-" ? i.avatar : defAvatar;
-            // Jika pelawat ada gambar sebenar, kita boleh kekalkan logik butang viewImage, tapi untuk ikon sebelah nama, guna avatar default Pelawat atau ikon user
-            if(i.kategori === "PELAWAT") userAvatar = "https://cdn-icons-png.flaticon.com/128/3135/3135768.png";
+            // LOGIK AVATAR DIPERBAIKI: Keutamaan kepada pilihan user, override pelawat hanya jika tiada avatar
+            let currentDef = (i.kategori === "PELAWAT") ? "https://cdn-icons-png.flaticon.com/128/3135/3135768.png" : defAvatar;
+            let userAvatar = (i.avatar && i.avatar !== "-") ? i.avatar : currentDef;
 
             let avatarImg = `<img src="${userAvatar}" style="width:35px; height:35px; border-radius:50%; margin-right:10px; border:2px solid #ddd; background:#fff; padding:2px; flex-shrink:0;">`;
 
@@ -1153,4 +1153,3 @@
 </script>
 </body>
 </html>
-
