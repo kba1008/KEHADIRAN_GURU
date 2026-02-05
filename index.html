@@ -16,11 +16,11 @@
         const PASSCODE = "101010";
          
         // 3. Koordinat Lokasi (Ambil dari Google Maps)
-        const SCHOOL_LAT = 5.227691965160906; 
-        const SCHOOL_LNG = 100.69903377890643; 
+        const SCHOOL_LAT = 5.235729703432274; 
+        const SCHOOL_LNG = 100.6833620808224; 
         
         // 4. Jarak Radius yang dibenarkan (dalam meter)
-        const RADIUS_METER = 30;  
+        const RADIUS_METER = 300; 
 
         // 5. Anti-Spam Check-Check: Berapa minit dalam kawasan baru auto-masuk? (Elak spam)
         const MINIT_ANTI_SPAM_MASUK = 0.0001;
@@ -780,9 +780,12 @@
         if(!isAuto) { document.getElementById('btnMainSubmit').disabled = true; document.getElementById('btnMainSubmit').innerHTML = 'SEDANG HANTAR...'; }
 
         try {
+            // DAPATKAN AVATAR YANG DIPILIH
+            let savedAvatar = localStorage.getItem('ehadir_user_avatar') || "";
+
             // GEN UUID UNTUK SESI UNIK
             let uniqueID = Date.now().toString(36) + Math.random().toString(36).substr(2, 5);
-            const payload = { action: "MASUK", passcode: PASSCODE, nama: nama, kategori: kat, alasan: alasan, lat: lastLat, lng: lastLng, clientTime: now.toISOString(), uuid: uniqueID };
+            const payload = { action: "MASUK", passcode: PASSCODE, nama: nama, kategori: kat, alasan: alasan, lat: lastLat, lng: lastLng, clientTime: now.toISOString(), uuid: uniqueID, avatar: savedAvatar };
             
             const result = await sendData(payload);
 
@@ -1096,7 +1099,7 @@
     function loadList() { 
         let offlineQueue = JSON.parse(localStorage.getItem('ehadir_offline_queue') || "[]");
         let offlineItems = offlineQueue.filter(q => q.action === "MASUK").map(q => ({
-            nama: q.nama, kategori: q.kategori, jam: new Date(q.clientTime).toLocaleTimeString('en-US', {hour12:true, hour:'2-digit', minute:'2-digit', second:'2-digit'}), isOffline: true
+            nama: q.nama, kategori: q.kategori, jam: new Date(q.clientTime).toLocaleTimeString('en-US', {hour12:true, hour:'2-digit', minute:'2-digit', second:'2-digit'}), avatar: q.avatar, isOffline: true
         }));
         if(!navigator.onLine) { renderList(offlineItems); return; }
         fetch(API_URL, { method: "POST", body: JSON.stringify({action: "GET_LIST", passcode: PASSCODE}) })
@@ -1111,12 +1114,30 @@
     function renderList(items) {
         document.getElementById('count').innerText = items.length; 
         let h = ""; 
+        let defAvatar = "https://cdn-icons-png.flaticon.com/128/3135/3135715.png";
         items.forEach((i, idx) => { 
             let imgBtn = (i.kategori === "PELAWAT" && i.foto) ? `<span class="icon-btn" onclick="viewImage(${idx})"><img src="https://cdn-icons-png.flaticon.com/128/3342/3342137.png" class="icon-3d-mini"></span>` : "";
             let xBtn = `<span class="icon-btn" style="border-color:#fadbd8;" onclick="keluarManual('${i.nama}')"><img src="https://cdn-icons-png.flaticon.com/128/6861/6861362.png" class="icon-3d-mini"></span>`;
             let offlineClass = i.isOffline ? "offline-item" : "";
             let offlineIcon = i.isOffline ? `<img src="https://cdn-icons-png.flaticon.com/128/159/159604.png" class="icon-3d-mini" title="Menunggu Sync"> ` : "";
-            h += `<div class="user-card ${offlineClass}"><div class="user-info"><strong>${offlineIcon}${i.nama}</strong><div class="user-details"><span>${i.kategori}</span><span class="live-timer" data-masuk="${i.jam||("undefined")}"><img src="https://cdn-icons-png.flaticon.com/128/2972/2972531.png" style="width:12px;height:12px;vertical-align:middle"> 0H 0M</span></div></div><div class="list-actions">${imgBtn}${xBtn}</div></div>`; 
+            
+            // LOGIK AVATAR
+            let userAvatar = i.avatar && i.avatar !== "-" ? i.avatar : defAvatar;
+            // Jika pelawat ada gambar sebenar, kita boleh kekalkan logik butang viewImage, tapi untuk ikon sebelah nama, guna avatar default Pelawat atau ikon user
+            if(i.kategori === "PELAWAT") userAvatar = "https://cdn-icons-png.flaticon.com/128/3135/3135768.png";
+
+            let avatarImg = `<img src="${userAvatar}" style="width:35px; height:35px; border-radius:50%; margin-right:10px; border:2px solid #ddd; background:#fff; padding:2px; flex-shrink:0;">`;
+
+            h += `<div class="user-card ${offlineClass}">
+                    <div style="display:flex; align-items:center; width:100%;">
+                        ${avatarImg}
+                        <div class="user-info">
+                            <strong>${offlineIcon}${i.nama}</strong>
+                            <div class="user-details"><span>${i.kategori}</span><span class="live-timer" data-masuk="${i.jam||("undefined")}"><img src="https://cdn-icons-png.flaticon.com/128/2972/2972531.png" style="width:12px;height:12px;vertical-align:middle"> 0H 0M</span></div>
+                        </div>
+                    </div>
+                    <div class="list-actions">${imgBtn}${xBtn}</div>
+                  </div>`; 
         }); 
         document.getElementById('listContainer').innerHTML = h || "<div style='padding:20px; color:#999; font-size:12px;'>Tiada rekod hari ini.</div>"; 
         updateLiveTimers();
@@ -1132,4 +1153,3 @@
 </script>
 </body>
 </html>
-
