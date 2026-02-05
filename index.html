@@ -6,7 +6,7 @@
     <title>Sistem Pelawat & Kehadiran v22.9 (Auto Mode)</title>
     
     <!-- ====================================================================== -->
-    <!--                 RUANGAN EDIT PENGGUNA (SETTING DI SINI)                -->
+    <!--                 RUANGAN EDIT PENGGUNA (mantap)                -->
     <!-- ====================================================================== -->
     <script>
         // 1. Masukkan Link Google Apps Script (Web App URL) di sini
@@ -16,11 +16,11 @@
         const PASSCODE = "101010";
          
         // 3. Koordinat Lokasi (Ambil dari Google Maps)
-        const SCHOOL_LAT = 5.227700774485594; 
-        const SCHOOL_LNG = 100.69903276940211; 
+        const SCHOOL_LAT = 5.235729703432274; 
+        const SCHOOL_LNG = 100.6833620808224; 
         
         // 4. Jarak Radius yang dibenarkan (dalam meter)
-        const RADIUS_METER = 100; 
+        const RADIUS_METER = 300; 
 
         // 5. Anti-Spam Check-Check: Berapa minit dalam kawasan baru auto-masuk? (Elak spam)
         const MINIT_ANTI_SPAM_MASUK = 0.0001;
@@ -53,12 +53,26 @@
         select:focus, input:focus { border-color: #1e3c72; background: #fff; }
         textarea { resize: vertical; min-height: 80px; display: none; border: 2px solid #f39c12; background: #fffcf5; } /* HIDDEN ALASAN */
 
-        /* === NEW CSS FOR NAME LOCK === */
+        /* === NEW CSS FOR NAME LOCK & AVATAR === */
         .input-group { position: relative; display: flex; align-items: center; width: 100%; margin-bottom: 12px; }
-        .input-group input { margin-bottom: 0; padding-right: 50px; }
-        .lock-btn { position: absolute; right: 8px; top: 50%; transform: translateY(-50%); cursor: pointer; background: none; border: none; z-index: 5; padding: 5px; border-radius: 50%; transition: 0.2s; }
-        .lock-btn:hover { background: rgba(0,0,0,0.05); }
+        /* Tambah padding right supaya dua butang muat */
+        .input-group input { margin-bottom: 0; padding-right: 90px; }
+        
+        .lock-btn { position: absolute; right: 5px; top: 50%; transform: translateY(-50%); cursor: pointer; background: #ecf0f1; border: none; z-index: 5; padding: 6px; border-radius: 50%; transition: 0.2s; width: 35px; height: 35px; display: flex; align-items: center; justify-content: center; }
+        .lock-btn:hover { background: #dfe6e9; }
         .lock-btn:active { transform: translateY(-50%) scale(0.9); }
+        
+        .avatar-btn { right: 48px; background: transparent; } /* Butang avatar sebelah butang lock */
+
+        /* Style Khas bila lock aktif (Kuning) */
+        .btn-yellow { background: #f1c40f !important; box-shadow: 0 0 10px rgba(241, 196, 15, 0.5); border: 2px solid #f39c12; }
+
+        /* Style Modal Avatar Grid */
+        .avatar-grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 10px; max-height: 300px; overflow-y: auto; padding: 10px; }
+        .avatar-option { width: 100%; aspect-ratio: 1/1; cursor: pointer; border-radius: 50%; border: 2px solid transparent; transition: 0.2s; padding: 2px; background: #f8f9fa; }
+        .avatar-option:hover { border-color: #1e3c72; background: #e8f5e9; transform: scale(1.1); }
+        .avatar-option.selected { border-color: #27ae60; background: #d4edda; box-shadow: 0 0 10px rgba(39, 174, 96, 0.3); }
+        .avatar-option img { width: 100%; height: 100%; object-fit: contain; }
         /* ============================== */
 
         .btn { width: 100%; padding: 16px; background: #1e3c72; color: white; border: none; border-radius: 12px; font-size: 15px; font-weight: 600; cursor: pointer; margin-top: 8px; box-shadow: 0 4px 10px rgba(30, 60, 114, 0.2); transition: 0.2s; letter-spacing: 0.5px; display: flex; align-items: center; justify-content: center; gap: 8px; }
@@ -148,7 +162,7 @@
         @keyframes spin3d { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
         .spin-3d { animation: spin3d 2s linear infinite; }
 
-        #customModal { display: none; position: fixed; z-index: 10000; left: 0; top: 0; width: 100%; height: 100%; background-color: rgba(0,0,0,0.6); backdrop-filter: blur(5px); align-items: center; justify-content: center; animation: fadeIn 0.3s; }
+        #customModal, #avatarModalContainer { display: none; position: fixed; z-index: 10000; left: 0; top: 0; width: 100%; height: 100%; background-color: rgba(0,0,0,0.6); backdrop-filter: blur(5px); align-items: center; justify-content: center; animation: fadeIn 0.3s; }
         .custom-modal-content { background: white; padding: 30px 25px; border-radius: 20px; width: 85%; max-width: 350px; text-align: center; box-shadow: 0 20px 50px rgba(0,0,0,0.3); transform: scale(0.9); animation: popUp 0.3s forwards; }
         @keyframes popUp { to { transform: scale(1); } }
         .modal-icon-top { font-size: 50px; margin-bottom: 15px; display: block; }
@@ -182,6 +196,20 @@
         </div>
     </div>
 
+    <!-- MODAL PILIH AVATAR -->
+    <div id="avatarModalContainer">
+        <div class="custom-modal-content">
+            <div class="modal-title">PILIH AVATAR ANDA</div>
+            <div class="modal-msg">Pilih ikon yang sesuai dengan gaya anda.</div>
+            <div id="avatarGrid" class="avatar-grid">
+                <!-- ICONS INJECTED VIA JS -->
+            </div>
+            <div class="modal-btn-row" style="margin-top:15px;">
+                <button class="modal-btn btn-cancel-modal" onclick="closeAvatarModal()">Tutup</button>
+            </div>
+        </div>
+    </div>
+
     <div id="imageModal">
         <span class="close-modal" onclick="closeModal()">&times;</span>
         <img class="modal-content" id="imgFull">
@@ -210,7 +238,7 @@
             <div class="main-title-block">
                 <div class="title-small">SISTEM PENGURUSAN</div>
                 <div class="title-big">E-HADIR</div>
-                <div class="title-big">AUTO-PILOT</div>
+                <div class="title-big">SK SELAMA (K)</div>
             </div>
         </div>
 
@@ -224,7 +252,7 @@
 
             <div id="dashboardPanel">
                 <span class="user-welcome">
-                    <img src="https://cdn-icons-png.flaticon.com/128/4140/4140047.png" class="icon-3d-lg"> 
+                    <img id="userAvatarDash" src="https://cdn-icons-png.flaticon.com/128/4140/4140047.png" class="icon-3d-lg"> 
                     Hai, <span id="sessionName">--</span>
                 </span>
                 <div class="locked-msg">Auto Check-In Berjaya.</div>
@@ -262,11 +290,18 @@
                     <option value="PELAWAT">PELAWAT (AWAM)</option>
                 </select>
                 
-                <!-- INPUT NAMA WITH LOCK BUTTON -->
+                <!-- INPUT NAMA WITH LOCK & AVATAR BUTTONS -->
                 <div class="input-group">
                     <input type="text" id="nama" placeholder="NAMA PENUH (HURUF BESAR)" style="text-transform:uppercase">
+                    
+                    <!-- AVATAR BUTTON -->
+                    <button id="avatarBtn" class="lock-btn avatar-btn" onclick="openAvatarModal()" title="Pilih Avatar">
+                        <img id="currentAvatarMini" src="https://cdn-icons-png.flaticon.com/128/4140/4140048.png" class="icon-3d-mini">
+                    </button>
+
+                    <!-- LOCK BUTTON -->
                     <button id="lockBtn" class="lock-btn" onclick="toggleLockName()" title="Kunci Nama">
-                        <img src="https://cdn-icons-png.flaticon.com/128/149/149463.png" class="icon-3d-mini" id="lockIconImg" style="filter:opacity(0.4)">
+                        <img src="https://cdn-icons-png.flaticon.com/128/2889/2889676.png" class="icon-3d-mini" id="lockIconImg" style="filter:opacity(0.4)">
                     </button>
                 </div>
                 
@@ -458,6 +493,7 @@
         fetchConfig(); 
         getHijriDate();
         initLockName(); 
+        initAvatar(); // Init avatar
         initBackgroundService(); // Initialize WakeLock & Permission
         
         if(!navigator.onLine) showSyncBar("MOD OFFLINE: Data akan disimpan dalam telefon.", "#e74c3c");
@@ -512,6 +548,51 @@
         }
     }
 
+    // --- AVATAR LOGIC ---
+    const AVATARS = [
+        "https://cdn-icons-png.flaticon.com/128/4140/4140048.png", "https://cdn-icons-png.flaticon.com/128/4140/4140047.png",
+        "https://cdn-icons-png.flaticon.com/128/4140/4140037.png", "https://cdn-icons-png.flaticon.com/128/4140/4140051.png",
+        "https://cdn-icons-png.flaticon.com/128/4140/4140040.png", "https://cdn-icons-png.flaticon.com/128/4140/4140061.png",
+        "https://cdn-icons-png.flaticon.com/128/4140/4140052.png", "https://cdn-icons-png.flaticon.com/128/4140/4140042.png",
+        "https://cdn-icons-png.flaticon.com/128/4140/4140046.png", "https://cdn-icons-png.flaticon.com/128/4140/4140057.png",
+        "https://cdn-icons-png.flaticon.com/128/4140/4140039.png", "https://cdn-icons-png.flaticon.com/128/4140/4140059.png",
+        "https://cdn-icons-png.flaticon.com/128/4140/4140060.png", "https://cdn-icons-png.flaticon.com/128/4140/4140069.png",
+        "https://cdn-icons-png.flaticon.com/128/4140/4140063.png", "https://cdn-icons-png.flaticon.com/128/4140/4140066.png",
+        "https://cdn-icons-png.flaticon.com/128/4140/4140074.png", "https://cdn-icons-png.flaticon.com/128/4140/4140072.png",
+        "https://cdn-icons-png.flaticon.com/128/4140/4140076.png", "https://cdn-icons-png.flaticon.com/128/4140/4140038.png",
+        "https://cdn-icons-png.flaticon.com/128/4358/4358667.png", "https://cdn-icons-png.flaticon.com/128/1999/1999625.png",
+        "https://cdn-icons-png.flaticon.com/128/3135/3135768.png", "https://cdn-icons-png.flaticon.com/128/3048/3048122.png",
+        "https://cdn-icons-png.flaticon.com/128/147/147144.png",   "https://cdn-icons-png.flaticon.com/128/3430/3430545.png",
+        "https://cdn-icons-png.flaticon.com/128/9402/9402342.png", "https://cdn-icons-png.flaticon.com/128/9077/9077975.png",
+        "https://cdn-icons-png.flaticon.com/128/924/924915.png",   "https://cdn-icons-png.flaticon.com/128/4140/4140055.png"
+    ];
+
+    function initAvatar() {
+        let saved = localStorage.getItem('ehadir_user_avatar');
+        if(saved) document.getElementById('currentAvatarMini').src = saved;
+        // Generate Grid
+        let grid = document.getElementById('avatarGrid');
+        grid.innerHTML = "";
+        AVATARS.forEach(url => {
+            let div = document.createElement('div');
+            div.className = "avatar-option";
+            if(url === saved) div.classList.add('selected');
+            div.innerHTML = `<img src="${url}">`;
+            div.onclick = () => selectAvatar(url);
+            grid.appendChild(div);
+        });
+    }
+
+    function openAvatarModal() { document.getElementById('avatarModalContainer').style.display = 'flex'; }
+    function closeAvatarModal() { document.getElementById('avatarModalContainer').style.display = 'none'; }
+
+    function selectAvatar(url) {
+        localStorage.setItem('ehadir_user_avatar', url);
+        document.getElementById('currentAvatarMini').src = url;
+        initAvatar(); // Refresh grid state
+        closeAvatarModal();
+    }
+
     // --- LOGIK LOCK NAMA & AUTO SYNC ---
     function initLockName() {
         let locked = localStorage.getItem('ehadir_locked_name');
@@ -519,18 +600,38 @@
         let input = document.getElementById('nama');
         let sel = document.getElementById('kategori');
         let btnImg = document.getElementById('lockIconImg');
+        let btnLock = document.getElementById('lockBtn');
         
-        if (locked) {
+        // --- MOD EDIT: STRICT VALIDATION ---
+        // Jika salah satu tiada (tidak lengkap), anggap data rosak -> Buka Kunci
+        if (!locked || !lockedKat) {
+            if(locked || lockedKat) { // Jika separa ada
+                localStorage.removeItem('ehadir_locked_name');
+                localStorage.removeItem('ehadir_locked_kat');
+            }
+            locked = null; 
+            lockedKat = null;
+        }
+        // -----------------------------------
+
+        if (locked && lockedKat) {
             input.value = locked;
-            if(lockedKat) sel.value = lockedKat;
+            sel.value = lockedKat;
             input.readOnly = true;
             sel.disabled = true; // Lock category
             input.style.background = "#fff8e1"; 
-            btnImg.src = "https://cdn-icons-png.flaticon.com/128/2889/2889676.png"; 
+            // UPDATED LOCK ICON & YELLOW BTN
+            btnImg.src = "https://cdn-icons-png.flaticon.com/128/2913/2913133.png"; 
             btnImg.style.filter = "opacity(1)";
+            btnLock.classList.add('btn-yellow');
         } else {
-            btnImg.src = "https://cdn-icons-png.flaticon.com/128/149/149463.png"; 
+            input.readOnly = false;
+            sel.disabled = false;
+            input.style.background = "#f8f9fa";
+            // UPDATED UNLOCK ICON & REMOVE YELLOW
+            btnImg.src = "https://cdn-icons-png.flaticon.com/128/2889/2889676.png"; 
             btnImg.style.filter = "opacity(0.4)";
+            btnLock.classList.remove('btn-yellow');
         }
     }
 
@@ -876,13 +977,13 @@
             hasNotifiedExit = false; // Reset Exit Notification
             
             // 1. Trigger Notification: "ANDA SUDAH SAMPAI!"
-            if (!session && locked && !hasNotifiedEntry) {
+            if (!session && locked && lockedKat && !hasNotifiedEntry) {
                 hasNotifiedEntry = true;
                 sendNotification("ANDA SUDAH SAMPAI!", "Sila klik di sini untuk buka aplikasi", "wake-up-entry");
             }
 
             // 2. Logic Countdown Auto-Masuk (Jalan bila App Terbuka)
-            if (!session && locked && !isSubmitting) {
+            if (!session && locked && lockedKat && !isSubmitting) {
                 if (inZoneStart > 0) {
                     let elapsed = now - inZoneStart;
                     let remainingSec = Math.ceil((MS_IN_DELAY - elapsed) / 1000);
@@ -985,6 +1086,9 @@
             document.getElementById('dashboardPanel').style.display = 'block'; 
             document.getElementById('sessionName').innerText = s.nama; 
             document.getElementById('dynamicStatus').innerText = "STATUS: " + s.kategori + " (SEDANG BERTUGAS)";
+            // LOAD SAVED AVATAR IF ANY
+            let savedAvatar = localStorage.getItem('ehadir_user_avatar');
+            if(savedAvatar) document.getElementById('userAvatarDash').src = savedAvatar;
             updateDashboardInfo(); 
         }
     }
@@ -1028,5 +1132,3 @@
 </script>
 </body>
 </html>
-
-
