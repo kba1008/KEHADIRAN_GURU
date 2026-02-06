@@ -16,11 +16,12 @@
         const PASSCODE = "101010";
         
         // 3. Koordinat Lokasi (Ambil dari Google Maps)
-        const SCHOOL_LAT = 5.227691965160906; 
-        const SCHOOL_LNG = 100.69903377890643; 
+        const SCHOOL_LAT = 5.2278663491259145; 
+        const SCHOOL_LNG = 100.69910037252524; 
         
         // 4. Jarak Radius yang dibenarkan (dalam meter)
-        const RADIUS_METER = 100; 
+        // DIUBAH KE 100M MENGIKUT SYARAT AUTO-CHECKOUT
+        const RADIUS_METER = 100;  
     </script>
     <!-- ====================================================================== -->
 
@@ -614,6 +615,9 @@
             return; 
         }
 
+        // Reset flag arming supaya tak double check-in jika glitch
+        localStorage.setItem('ehadir_auto_armed', 'false');
+
         isSubmitting = true;
         if(!isAuto) { document.getElementById('btnMainSubmit').disabled = true; document.getElementById('btnMainSubmit').innerHTML = 'SEDANG HANTAR...'; }
 
@@ -753,8 +757,14 @@
             navigator.geolocation.watchPosition(pos => {
                 lastLat = pos.coords.latitude; lastLng = pos.coords.longitude;
                 currentDist = calcDist(lastLat, lastLng, SCHOOL_LAT, SCHOOL_LNG); 
-                isInZone = (currentDist <= RADIUS_METER);
+                isInZone = (currentDist <= RADIUS_METER); 
                 
+                // LOGIK RESET AUTO-CHECKIN (300m)
+                // Syarat: Mesti keluar > 300m untuk re-arm auto checkin
+                if (currentDist > 300) {
+                     localStorage.setItem('ehadir_auto_armed', 'true');
+                }
+
                 let icon = isInZone ? "<img src='https://cdn-icons-png.flaticon.com/128/190/190411.png' class='icon-3d-mini'>" : "<img src='https://cdn-icons-png.flaticon.com/128/190/190406.png' class='icon-3d-mini'>";
                 let textStatus = isInZone ? " DALAM KAWASAN" : " LUAR KAWASAN";
                 document.getElementById('statusText').innerHTML = icon + textStatus + " (" + Math.round(currentDist) + "m)";
@@ -765,6 +775,7 @@
                 let session = JSON.parse(localStorage.getItem('ehadir_session'));
                 let locked = localStorage.getItem('ehadir_locked_name');
                 let lockedKat = localStorage.getItem('ehadir_locked_kat');
+                let isArmed = localStorage.getItem('ehadir_auto_armed') === 'true'; // Cek status 'Armed'
 
                 if (isInZone) {
                     // Masuk Zone
@@ -772,7 +783,10 @@
                     if(autoCheckoutTimer) { clearTimeout(autoCheckoutTimer); autoCheckoutTimer = null; warningCountdown = 10; }
                     
                     // Auto Check-In Logic
-                    if (!session && locked && lockedKat && !isSubmitting) {
+                    // Tambahan syarat: && isArmed
+                    if (!session && locked && lockedKat && !isSubmitting && isArmed) {
+                        // Hantar Masuk & Disarm
+                        localStorage.setItem('ehadir_auto_armed', 'false');
                         hantarMasuk(true);
                     }
                 } else {
