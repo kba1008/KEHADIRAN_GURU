@@ -16,8 +16,8 @@
         const PASSCODE = "101010";
         
         // 3. Koordinat Lokasi (Ambil dari Google Maps)
-        const SCHOOL_LAT = 5.227691965160906; 
-        const SCHOOL_LNG = 100.69903377890643; 
+        const SCHOOL_LAT = 5.2278663491259145; 
+        const SCHOOL_LNG = 100.69910037252524; 
         
         // 4. Jarak Radius yang dibenarkan (dalam meter)
         // DIUBAH KE 100M MENGIKUT SYARAT AUTO-CHECKOUT
@@ -327,11 +327,33 @@
     if ('serviceWorker' in navigator) {
         window.addEventListener('load', () => {
             navigator.serviceWorker.register('sw.js').then(reg => {
-                console.log('SW Berjaya:', reg.scope);
+                console.log('SW V45 Berjaya:', reg.scope);
+                
+                // Integrasi Periodic Sync (Jika Disokong)
+                if ('periodicSync' in reg) {
+                    try {
+                        reg.periodicSync.register('periodic-attendance-sync', {
+                            minInterval: 24 * 60 * 60 * 1000
+                        });
+                    } catch (e) { console.log("Periodic Sync Access Denied"); }
+                }
+
                 if ('SyncManager' in window) {
                     reg.sync.register('sync-attendance').catch(err => console.log("Sync bg gagal", err));
                 }
             }).catch(err => console.log('SW Gagal:', err));
+
+            // LISTENER MESSAGE DARI SW V45
+            navigator.serviceWorker.addEventListener('message', (event) => {
+                if(event.data && event.data.type === 'BACKGROUND_SYNC_REQUESTED'){
+                    console.log("SW: Meminta Sync segera...");
+                    syncOfflineData();
+                }
+                if(event.data && event.data.type === 'GEOFENCE_CHECK_REQUESTED'){
+                    console.log("SW: Meminta Semakan Lokasi...");
+                    showSyncBar("Pemeriksaan Lokasi Latar Belakang...", "#3498db");
+                }
+            });
         });
     }
 
@@ -891,4 +913,3 @@
 </script>
 </body>
 </html>
-
