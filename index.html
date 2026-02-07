@@ -14,13 +14,13 @@
         
         // 2. Kata Laluan untuk Admin / Manual Override
         const PASSCODE = "101010";
-         
+          
         // 3. Koordinat Lokasi (Ambil dari Google Maps)
-        const SCHOOL_LAT = 5.2357556919956485; 
-        const SCHOOL_LNG = 100.68345861672972; 
+        const SCHOOL_LAT = 5.235733027657344; 
+        const SCHOOL_LNG = 100.68344913368924; 
         
         // 4. Jarak Radius yang dibenarkan (dalam meter)
-        const RADIUS_METER = 30000; 
+        const RADIUS_METER = 10000; 
 
         // 5. Anti-Spam Check-Check: Berapa minit dalam kawasan baru auto-masuk? (Elak spam)
         const MINIT_ANTI_SPAM_MASUK = 0.0001;
@@ -216,10 +216,9 @@
                     // STRICT CHECK: Double Check Google Sheet (Column E Logic)
                     if (result.data && result.data.result === "success") {
                         if(isAuto) {
-                            showSyncBar("SELAMAT DATANG KE SK SELAMA (K)", "#27ae60");
-                            localStorage.setItem('ehadir_session', JSON.stringify({nama: nama, kategori: kat, date: now.toISOString().slice(0,10), uuid: uniqueID, avatar: savedAvatar}));
-                            localStorage.removeItem('ehadir_auto_in_blocked');
-                            location.reload();
+                            // KEMASKINI SURGICAL: Auto-In kini wajib semak DB sebelum sahkan kejayaan
+                            showSyncBar("MENGESAHKAN DATA DI PANGKALAN DATA...", "#f39c12");
+                            await verifyAndFinalize(nama, kat, uniqueID, savedAvatar, 1, true);
                         } else {
                              // MANUAL MODE: VERIFY DAHULU SEBELUM SUCCESS
                              document.getElementById('btnMainSubmit').innerHTML = 'SAHKAN DATA (DB)...';
@@ -242,12 +241,18 @@
             }
         }
 
-        async function verifyAndFinalize(nama, kat, uuid, avatar, attempt = 1) {
+        async function verifyAndFinalize(nama, kat, uuid, avatar, attempt = 1, isAuto = false) {
              if(attempt > 5) {
-                 showModernAlert("Masa Tamat", "Data dihantar tetapi server lambat respon. Sila semak senarai manual.", "info");
-                 isSubmitting = false;
-                 document.getElementById('btnMainSubmit').disabled = false;
-                 document.getElementById('btnMainSubmit').innerHTML = `<img src="https://cdn-icons-png.flaticon.com/128/9402/9402342.png" class="icon-3d-std"> DAFTAR MASUK (MANUAL)`;
+                 if(isAuto) {
+                     // Jika auto gagal sahkan, reset submitting supaya boleh cuba lagi nanti
+                     showSyncBar("GAGAL SAHKAN DATA. AKAN CUBA SEMULA.", "#c0392b");
+                     isSubmitting = false;
+                 } else {
+                     showModernAlert("Masa Tamat", "Data dihantar tetapi server lambat respon. Sila semak senarai manual.", "info");
+                     isSubmitting = false;
+                     document.getElementById('btnMainSubmit').disabled = false;
+                     document.getElementById('btnMainSubmit').innerHTML = `<img src="https://cdn-icons-png.flaticon.com/128/9402/9402342.png" class="icon-3d-std"> DAFTAR MASUK (MANUAL)`;
+                 }
                  return;
              }
              
@@ -261,17 +266,24 @@
                  let record = list.find(item => item.nama === nama && item.jam && item.jam !== "");
                  
                  if (record) {
-                     showModernAlert("Berjaya", "Data disahkan masuk dalam sistem!", "success");
+                     if(isAuto) {
+                         showSyncBar("BERJAYA: DATA DISAHKAN DALAM SISTEM", "#27ae60");
+                         sendNotification("DAFTAR MASUK SAH", "Kehadiran anda telah direkodkan dalam pangkalan data.", "auto-success");
+                     } else {
+                         showModernAlert("Berjaya", "Data disahkan masuk dalam sistem!", "success");
+                     }
                      localStorage.setItem('ehadir_session', JSON.stringify({nama: nama, kategori: kat, date: new Date().toISOString().slice(0,10), uuid: uuid, avatar: avatar}));
                      localStorage.removeItem('ehadir_auto_in_blocked');
                      setTimeout(() => location.reload(), 1500);
                  } else {
-                     document.getElementById('btnMainSubmit').innerHTML = `SAHKAN DATA (${attempt}/5)...`;
-                     await verifyAndFinalize(nama, kat, uuid, avatar, attempt + 1);
+                     if(!isAuto) document.getElementById('btnMainSubmit').innerHTML = `SAHKAN DATA (${attempt}/5)...`;
+                     else showSyncBar(`MENYEMAK PANGKALAN DATA (${attempt}/5)...`, "#e67e22");
+                     
+                     await verifyAndFinalize(nama, kat, uuid, avatar, attempt + 1, isAuto);
                  }
              } catch(e) {
                  console.log("Verify Error", e);
-                 await verifyAndFinalize(nama, kat, uuid, avatar, attempt + 1);
+                 await verifyAndFinalize(nama, kat, uuid, avatar, attempt + 1, isAuto);
              }
         }
 
@@ -376,7 +388,7 @@
                  }
                  
                  if (isBlocked) {
-                     if(statusEl) statusEl.innerHTML += `<br><span style="font-size:9px; color:#e67e22;">AUTO-IN OFF (KELUAR > ${RADIUS_RESET_AUTO_IN}M UNTUK RESET)</span>`;
+                     if(statusEl) statusEl.innerHTML += `<br><span style="font-size:9px; color:#e67e22;">AUTO-IN DIGANTUNG (KELUAR > ${RADIUS_RESET_AUTO_IN}M UNTUK RESET)</span>`;
                      return; 
                  }
             } else {
@@ -824,7 +836,7 @@
                 <button id="btnPelawatSubmit" class="btn btn-pelawat" onclick="hantarPelawat()">
                     <img src="https://cdn-icons-png.flaticon.com/128/9402/9402342.png" class="icon-3d-std"> HANTAR DATA
                 </button>
-                <button class="btn btn-cancel" onclick="cancelPelawat()">BATAL</button>
+                <button class="btn btn-cancel" onclick="cancelPelawat">BATAL</button>
             </div>
 
             <div class="list-header">
@@ -902,7 +914,7 @@
                 offlineQueue.shift(); 
                 localStorage.setItem('ehadir_offline_queue', JSON.stringify(offlineQueue));
                 if (offlineQueue.length > 0) { syncOfflineData(); } 
-                else { showSyncBar("Semua data offline telah berjaya dihantar!", "#27ae60"); loadList(); }
+                else { showSyncBar("👍 Semua data offline telah berjaya dihantar!", "#27ae60"); loadList(); }
             } else { showSyncBar("Ralat Server: " + res.msg, "#c0392b"); }
         })
         .catch(err => { showSyncBar("Ralat Network. Akan cuba sebentar lagi.", "#e67e22"); });
@@ -922,7 +934,7 @@
             mIcon.innerText = ""; mTitle.style.color = "#c0392b";
             mBtns.innerHTML = `<button class="modal-btn btn-ok" onclick="closeCustomModal()">Faham</button>`;
         } else if(type === 'success') {
-            mIcon.innerText = "??"; mTitle.style.color = "#27ae60";
+            mIcon.innerText = "👍"; mTitle.style.color = "#27ae60";
             mBtns.innerHTML = `<button class="modal-btn btn-ok" onclick="closeCustomModal()">Terbaik</button>`;
         } else if(type === 'info') {
             mIcon.innerText = ""; mTitle.style.color = "#2980b9";
@@ -1039,8 +1051,7 @@
             if(locked || lockedKat) {
                 localStorage.removeItem('ehadir_locked_name');
                 localStorage.removeItem('ehadir_locked_kat');
-            }
-            locked = null; 
+            }ধনLocked = null; 
             lockedKat = null;
         }
 
@@ -1285,6 +1296,3 @@
 </script>
 </body>
 </html>
-
-
-
