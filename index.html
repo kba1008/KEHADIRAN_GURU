@@ -1,1298 +1,1576 @@
-<!DOCTYPE html>
-<html lang="ms">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Sistem Pelawat & Kehadiran v23.0 (Manual Override Fix)</title>
+<!doctype html>
+<html lang="ms" class="h-full">
+ <head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <meta name="theme-color" content="#10B981">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <title>Sistem Kehadiran 3D Elite</title>
+  <script src="https://cdn.tailwindcss.com/3.4.17"></script>
+  <script src="/_sdk/element_sdk.js"></script>
+  <script src="/_sdk/data_sdk.js"></script>
+  <script src="https://accounts.google.com/gsi/client" async defer></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&amp;display=swap" rel="stylesheet">
+  <style>
+    * { font-family: 'Plus Jakarta Sans', sans-serif; }
+    html, body { height: 100%; margin: 0; padding: 0; background: linear-gradient(135deg, #F8F9FA 0%, #E9ECEF 50%, #F8F9FA 100%); }
+    .app-wrapper { height: 100%; width: 100%; overflow-y: auto; overflow-x: hidden; }
     
-    <!-- ====================================================================== -->
-    <!--                 RUANGAN EDIT PENGGUNA (mantap)                -->
-    <!-- ====================================================================== -->
-    <script>
-        // 1. Masukkan Link Google Apps Script (Web App URL) di sini
-        const API_URL = 'https://script.google.com/macros/s/AKfycby7EZT41FWLpDMh27qGfpfJYZEnJPs2mMqN0lS8UYSVogiofK0Xu8tG3ucX2FDybABI/exec'; 
-        
-        // 2. Kata Laluan untuk Admin / Manual Override
-        const PASSCODE = "101010";
-          
-        // 3. Koordinat Lokasi (Ambil dari Google Maps)
-        const SCHOOL_LAT = 5.235733027657344; 
-        const SCHOOL_LNG = 100.68344913368924; 
-        
-        // 4. Jarak Radius yang dibenarkan (dalam meter)
-        const RADIUS_METER = 10000; 
-
-        // 5. Anti-Spam Check-Check: Berapa minit dalam kawasan baru auto-masuk? (Elak spam)
-        const MINIT_ANTI_SPAM_MASUK = 0.0001;
-
-        // 6. Auto Checkout Delay: Berapa minit luar kawasan baru auto-keluar? (Smooth)
-        const MINIT_DELAY_KELUAR = 0.1;
-
-        // 7. Jarak Reset Auto-In: Pengguna perlu keluar sejauh ini (meter) untuk aktifkan semula auto-in selepas check-out
-        const RADIUS_RESET_AUTO_IN = 300;
-
-        // 8. KONFIGURASI JADUAL BERTUGAS & KATEGORI (PUSAT KAWALAN UTAMA)
-        // Ubah masa di sini untuk kawal waktu masuk/keluar bagi setiap jabatan.
-        const JADUAL_BERTUGAS = {
-            "GURU":       { masuk: "07:45:00 AM", keluar: "01:30:00 PM" },
-            "AKP":        { masuk: "08:00:00 AM", keluar: "04:00:00 PM" },
-            "KEBERSIHAN": { masuk: "07:30:00 AM", keluar: "04:00:00 PM" },
-            "PELAWAT":    { masuk: "BEBAS",       keluar: "BEBAS" }
-        };
-
-        // --------------------------------------------------------------------------------------- 
-        //       ZON KOD KRITIKAL & LOGIK PENTING (SILA HANTAR BAHAGIAN INI KE OBFUSCATOR)
-        // ---------------------------------------------------------------------------------------
-        
-        let jamConfig = JADUAL_BERTUGAS; // Guna config local (Pantas & Bebas Data Luar)
-        let isInZone = false; 
-        let currentDist = 0; 
-        let lastLat = 0, lastLng = 0;
-        let currentList = []; 
-        let isSubmitting = false; 
-        let hasNotifiedWake = false; 
-        let inZoneStart = 0; 
-        let outZoneStart = 0; 
-        let wakeLock = null;
-        let hasNotifiedEntry = false;
-        let hasNotifiedExit = false;
-
-        function sendData(data) {
-            return new Promise((resolve, reject) => {
-                if (!data.clientTime) { data.clientTime = new Date().toISOString(); }
-                if (!navigator.onLine) {
-                    saveToQueue(data); resolve({ offline: true }); return;
-                }
-                // EDIT SURGICAL: Tambah 'nocache' unik & paksa 'no-store' supaya browser tidak guna respon lama (Isu Kali Kedua Fail)
-                fetch(API_URL + "?t=" + new Date().getTime(), { 
-                    method: "POST", 
-                    cache: "no-store", // PENTING: Halang caching response sukses terdahulu
-                    body: JSON.stringify(data) 
-                })
-                .then(response => response.json()).then(result => { resolve({ offline: false, data: result }); })
-                .catch(error => { saveToQueue(data); resolve({ offline: true }); });
-            });
-        }
-
-        function saveToQueue(data) {
-            if (!data.kategori) data.kategori = "PELAWAT";
-            let queue = JSON.parse(localStorage.getItem('ehadir_offline_queue') || "[]");
-            queue.push(data);
-            localStorage.setItem('ehadir_offline_queue', JSON.stringify(queue));
-        }
-
-        function fetchConfig() {
-            // FUNGSI DIUBAH SUAI: Guna data tempatan (JADUAL_BERTUGAS) terus tanpa fetch API.
-            // Ini mempercepatkan loading dan membuang kebergantungan pada Google Sheets untuk config.
-            let loadEl = document.getElementById('loadingConfig');
-            if(loadEl) loadEl.style.display = 'none';
-            
-            // Kemaskini dropdown pilihan kategori jika perlu (Pilihan)
-            // updateCategoryOptions(); 
-            
-            if(typeof updateScheduleInfo === 'function') updateScheduleInfo(); 
-        }
-
-        function checkAutoStatus(list) {
-            let locked = localStorage.getItem('ehadir_locked_name');
-            if(!locked) return;
-            let userRecord = list.find(item => item.nama === locked);
-            if (userRecord) {
-                if (!userRecord.keluar || userRecord.keluar === "") {
-                     let currentSess = JSON.parse(localStorage.getItem('ehadir_session'));
-                     if (!currentSess) {
-                         localStorage.setItem('ehadir_session', JSON.stringify({
-                             nama: locked,
-                             kategori: userRecord.kategori || "GURU", 
-                             date: new Date().toISOString().slice(0,10)
-                         }));
-                         location.reload(); 
-                     }
-                } else {
-                    let currentSess = JSON.parse(localStorage.getItem('ehadir_session'));
-                    if (currentSess && currentSess.nama === locked) {
-                        localStorage.removeItem('ehadir_session');
-                        location.reload();
-                    }
-                }
-            }
-        }
-
-        async function hantarMasuk(isAuto = false) {
-            if(isSubmitting) return; 
-
-            // LOGIK BARU: RESET SESSION DAHULU (Permintaan Murid)
-            if(!isAuto) {
-                localStorage.removeItem('ehadir_session');
-                localStorage.removeItem('ehadir_auto_in_blocked');
-            }
-
-            // EDIT SURGICAL: STRICT FILTER & ANTI-FAKE GPS (TIADA LAGI MANUAL OVERRIDE)
-            if(!isInZone) { 
-                if(isAuto) return; // Auto diam jika luar kawasan
-                showModernAlert("Luar Kawasan", "Anda berada di luar zon yang dibenarkan (" + Math.round(currentDist) + "m).", "error");
-                return;
-            }
-            
-            let nama, kat;
-            if (isAuto) {
-                nama = localStorage.getItem('ehadir_locked_name');
-                kat = localStorage.getItem('ehadir_locked_kat');
-            }
-            else {
-                nama = document.getElementById('nama').value.toUpperCase().trim();
-                kat = document.getElementById('kategori').value;
-            }
-
-            let alasan = "AUTO CHECK-IN (GPS)";
-            let now = new Date();
-
-            if (!nama || !kat) { 
-                if(!isAuto) showModernAlert("Data Tidak Lengkap", "Isi Nama dan Kategori.", "error"); 
-                return; 
-            }
-
-            isSubmitting = true;
-            if(!isAuto) { 
-                // STEP: FILTER ANTI-FAKE GPS (SAMPLING)
-                document.getElementById('btnMainSubmit').disabled = true; 
-                document.getElementById('btnMainSubmit').innerHTML = 'MENYEMAK GPS...'; 
-
-                try {
-                    await new Promise((resolve, reject) => {
-                        let samples = [];
-                        let required = 3; 
-                        let w = navigator.geolocation.watchPosition(p => {
-                            samples.push({lat: p.coords.latitude, lng: p.coords.longitude});
-                            document.getElementById('btnMainSubmit').innerHTML = `ANALISIS INTEGRITI (${samples.length}/${required})...`;
-                            
-                            if(samples.length >= required) {
-                                navigator.geolocation.clearWatch(w);
-                                // A. Cek Static (Fake GPS selalunya statik)
-                                let first = JSON.stringify(samples[0]);
-                                let isStatic = samples.every(s => JSON.stringify(s) === first);
-                                // B. Cek Jarak Terkini
-                                let last = samples[samples.length-1];
-                                let d = calcDist(last.lat, last.lng, SCHOOL_LAT, SCHOOL_LNG);
-                                
-                                if(d > RADIUS_METER) reject(`Lokasi tidak sah! Jarak: ${Math.round(d)}m`);
-                                else if(isStatic) reject("GPS Statik Dikesan (Anti-Fake). Sila bergerak sedikit.");
-                                else {
-                                    lastLat = last.lat; lastLng = last.lng; // Update global
-                                    resolve();
-                                }
-                            }
-                        }, err => {
-                            navigator.geolocation.clearWatch(w); reject(err.message);
-                        }, {enableHighAccuracy: true, maximumAge: 0, timeout: 5000});
-                    });
-                } catch(e) {
-                    showModernAlert("Gagal Masuk", e, "error");
-                    isSubmitting = false;
-                    document.getElementById('btnMainSubmit').disabled = false;
-                    document.getElementById('btnMainSubmit').innerHTML = `<img src="https://cdn-icons-png.flaticon.com/128/9402/9402342.png" class="icon-3d-std"> DAFTAR MASUK (MANUAL)`;
-                    return;
-                }
-
-                document.getElementById('btnMainSubmit').innerHTML = 'SEDANG HANTAR...'; 
-            }
-
-            try {
-                let savedAvatar = localStorage.getItem('ehadir_user_avatar') || "";
-                // Generate NEW uniqueID setiap kali masuk untuk elak duplicate reject
-                let uniqueID = Date.now().toString(36) + Math.random().toString(36).substr(2, 5);
-                const payload = { action: "MASUK", passcode: PASSCODE, nama: nama, kategori: kat, alasan: alasan, lat: lastLat, lng: lastLng, clientTime: now.toISOString(), uuid: uniqueID, avatar: savedAvatar };
-                
-                const result = await sendData(payload);
-
-                if (result.offline) {
-                    // ALERT REMOVED: Guna modern alert untuk privacy & smooth flow
-                    if(!isAuto) showModernAlert("Mod Offline", "Data disimpan dalam telefon.", "info");
-                    // Offline mode diteruskan macam biasa
-                    localStorage.setItem('ehadir_session', JSON.stringify({nama: nama, kategori: kat, date: now.toISOString().slice(0,10), uuid: uniqueID, avatar: savedAvatar}));
-                    localStorage.removeItem('ehadir_auto_in_blocked');
-                    location.reload();
-                } else {
-                    // STRICT CHECK: Double Check Google Sheet (Column E Logic)
-                    if (result.data && result.data.result === "success") {
-                        if(isAuto) {
-                            // KEMASKINI SURGICAL: Auto-In kini wajib semak DB sebelum sahkan kejayaan
-                            showSyncBar("MENGESAHKAN DATA DI PANGKALAN DATA...", "#f39c12");
-                            await verifyAndFinalize(nama, kat, uniqueID, savedAvatar, 1, true);
-                        } else {
-                             // MANUAL MODE: VERIFY DAHULU SEBELUM SUCCESS
-                             document.getElementById('btnMainSubmit').innerHTML = 'SAHKAN DATA (DB)...';
-                             await verifyAndFinalize(nama, kat, uniqueID, savedAvatar);
-                        }
-                    } else {
-                         // Jika server return error atau unknown status
-                         let msg = (result.data && result.data.msg) ? result.data.msg : "Data gagal masuk ke Google Sheet. Sila cuba lagi.";
-                         if(!isAuto) showModernAlert("Gagal", msg, "error");
-                         isSubmitting = false;
-                         document.getElementById('btnMainSubmit').disabled = false;
-                         document.getElementById('btnMainSubmit').innerHTML = `<img src="https://cdn-icons-png.flaticon.com/128/9402/9402342.png" class="icon-3d-std"> DAFTAR MASUK (MANUAL)`;
-                    }
-                }
-
-            } catch (error) {
-                console.error("Ralat:", error);
-                isSubmitting = false;
-                if(!isAuto) document.getElementById('btnMainSubmit').disabled = false;
-            }
-        }
-
-        async function verifyAndFinalize(nama, kat, uuid, avatar, attempt = 1, isAuto = false) {
-             if(attempt > 5) {
-                 if(isAuto) {
-                     // Jika auto gagal sahkan, reset submitting supaya boleh cuba lagi nanti
-                     showSyncBar("GAGAL SAHKAN DATA. AKAN CUBA SEMULA.", "#c0392b");
-                     isSubmitting = false;
-                 } else {
-                     showModernAlert("Masa Tamat", "Data dihantar tetapi server lambat respon. Sila semak senarai manual.", "info");
-                     isSubmitting = false;
-                     document.getElementById('btnMainSubmit').disabled = false;
-                     document.getElementById('btnMainSubmit').innerHTML = `<img src="https://cdn-icons-png.flaticon.com/128/9402/9402342.png" class="icon-3d-std"> DAFTAR MASUK (MANUAL)`;
-                 }
-                 return;
-             }
-             
-             await new Promise(r => setTimeout(r, 2000));
-
-             try {
-                 let response = await fetch(API_URL, { method: "POST", body: JSON.stringify({action: "GET_LIST", passcode: PASSCODE}) });
-                 let json = await response.json();
-                 let list = json.data || json;
-                 // Cek jika nama ada DAN masa (Kolum E/jam) wujud
-                 let record = list.find(item => item.nama === nama && item.jam && item.jam !== "");
-                 
-                 if (record) {
-                     if(isAuto) {
-                         showSyncBar("BERJAYA: DATA DISAHKAN DALAM SISTEM", "#27ae60");
-                         sendNotification("DAFTAR MASUK SAH", "Kehadiran anda telah direkodkan dalam pangkalan data.", "auto-success");
-                     } else {
-                         showModernAlert("Berjaya", "Data disahkan masuk dalam sistem!", "success");
-                     }
-                     localStorage.setItem('ehadir_session', JSON.stringify({nama: nama, kategori: kat, date: new Date().toISOString().slice(0,10), uuid: uuid, avatar: avatar}));
-                     localStorage.removeItem('ehadir_auto_in_blocked');
-                     setTimeout(() => location.reload(), 1500);
-                 } else {
-                     if(!isAuto) document.getElementById('btnMainSubmit').innerHTML = `SAHKAN DATA (${attempt}/5)...`;
-                     else showSyncBar(`MENYEMAK PANGKALAN DATA (${attempt}/5)...`, "#e67e22");
-                     
-                     await verifyAndFinalize(nama, kat, uuid, avatar, attempt + 1, isAuto);
-                 }
-             } catch(e) {
-                 console.log("Verify Error", e);
-                 await verifyAndFinalize(nama, kat, uuid, avatar, attempt + 1, isAuto);
-             }
-        }
-
-        async function hantarKeluar(isAuto = false) {
-            if(isSubmitting) return; 
-
-            let session = JSON.parse(localStorage.getItem('ehadir_session'));
-            if (!session || !session.nama) { return; } // Safety check
-            
-            let alasanValue = isAuto ? "AUTO CHECKOUT (KELUAR KAWASAN)" : "PULANG (MANUAL)";
-            let sessionUUID = session.uuid || "";
-
-            let proceed = async () => {
-                isSubmitting = true; 
-                if(!isAuto) { document.getElementById('btnKeluar').disabled = true; document.getElementById('btnKeluar').innerText = "PROSES RESET..."; }
-
-                try {
-                    const payload = { action: "KELUAR", passcode: PASSCODE, nama: session.nama.toUpperCase(), alasan: alasanValue, lat: lastLat, lng: lastLng, clientTime: new Date().toISOString(), uuid: sessionUUID };
-                    
-                    // EDIT SURGICAL: KELUAR TIDAK PERLU CEK SERVER. Fire & Forget.
-                    await sendData(payload);
-                    
-                    // Terus reset local session tanpa menunggu 'success' server.
-                    if(isAuto) {
-                        showSyncBar("SEMOGA SELAMAT DALAM PERJALANAN ANDA", "#c0392b");
-                    }
-                    
-                    // Reset Total Session
-                    localStorage.setItem('ehadir_auto_in_blocked', 'true');
-                    localStorage.removeItem('ehadir_session');
-                    
-                    // Delay sedikit untuk pastikan storage clear sebelum reload
-                    setTimeout(() => location.reload(), 500);
-
-                } catch (error) {
-                    // Jika error rangkaian pun, force logout tetap jalan
-                    console.error(error);
-                    localStorage.removeItem('ehadir_session');
-                    location.reload();
-                }
-            };
-
-            if(!isAuto) {
-                showModernAlert("Pengesahan", "Daftar keluar sekarang?", "confirm", proceed);
-            } else {
-                proceed();
-            }
-        }
-
-        function keluarManual(namaUser) {
-            let pass = prompt("ADMIN: Passcode untuk keluarkan " + namaUser + ":");
-            if (pass !== PASSCODE) { showModernAlert("Gagal", "Passcode salah.", "error"); return; }
-            
-            sendData({ action: "KELUAR", passcode: PASSCODE, nama: namaUser, alasan: "Manual Admin", lat: lastLat, lng: lastLng, clientTime: new Date().toISOString() })
-            .then(res => { loadList(); });
-        }
-
-        async function hantarPelawat() {
-            if(isSubmitting) return;
-            let foto = document.getElementById('base64Foto').value;
-            let namaPelawat = document.getElementById('namaPelawatInput').value.toUpperCase();
-            if (!foto) { showModernAlert("Tiada Gambar", "Ambil gambar dahulu.", "error"); return; }
-            if (!namaPelawat) { showModernAlert("Tiada Nama", "Isi nama pelawat.", "error"); return; }
-            isSubmitting = true;
-            document.getElementById('btnPelawatSubmit').disabled = true;
-            document.getElementById('btnPelawatSubmit').innerText = "SEDANG HANTAR...";
-            try {
-                const payload = { action: "MASUK", passcode: PASSCODE, kategori: "PELAWAT", nama: namaPelawat, fotoBase64: foto, lat: lastLat, lng: lastLng, clientTime: new Date().toISOString() };
-                let result = await sendData(payload);
-                if(result.offline || (result.data && result.data.result === "success")) {
-                    showModernAlert("Berjaya", "Data pelawat diterima.", "success");
-                    setTimeout(() => location.reload(), 1500);
-                } else {
-                    showModernAlert("Gagal", "Server menolak data.", "error");
-                    isSubmitting = false;
-                    document.getElementById('btnPelawatSubmit').disabled = false;
-                }
-            } catch (error) {
-                console.error(error);
-                isSubmitting = false;
-            }
-        }
-
-        function monitorAutoLogic() {
-            let MS_IN_DELAY = (typeof MINIT_ANTI_SPAM_MASUK !== 'undefined' ? MINIT_ANTI_SPAM_MASUK : 5) * 60 * 1000;
-            let MS_OUT_DELAY = (typeof MINIT_DELAY_KELUAR !== 'undefined' ? MINIT_DELAY_KELUAR : 10) * 60 * 1000;
-
-            let session = JSON.parse(localStorage.getItem('ehadir_session'));
-            let locked = localStorage.getItem('ehadir_locked_name');
-            let lockedKat = localStorage.getItem('ehadir_locked_kat');
-            let now = Date.now();
-
-            let statusEl = document.getElementById('statusText');
-            let isBlocked = localStorage.getItem('ehadir_auto_in_blocked'); 
-
-            if (isInZone) {
-                 let icon = "<img src='https://cdn-icons-png.flaticon.com/128/190/190411.png' class='icon-3d-mini'>";
-                 if(statusEl) {
-                     statusEl.innerHTML = icon + " DALAM KAWASAN (" + Math.round(currentDist) + "m)";
-                     statusEl.style.color = "#27ae60";
-                     statusEl.style.background = "#e8f5e9";
-                 }
-                 
-                 if (isBlocked) {
-                     if(statusEl) statusEl.innerHTML += `<br><span style="font-size:9px; color:#e67e22;">AUTO-IN DIGANTUNG (KELUAR > ${RADIUS_RESET_AUTO_IN}M UNTUK RESET)</span>`;
-                     return; 
-                 }
-            } else {
-                 let icon = "<img src='https://cdn-icons-png.flaticon.com/128/190/190406.png' class='icon-3d-mini'>";
-                 if(statusEl) {
-                     statusEl.innerHTML = icon + " LUAR KAWASAN (" + Math.round(currentDist) + "m)";
-                     statusEl.style.color = "#c0392b";
-                     statusEl.style.background = "#fdeea5";
-                 }
-            }
-
-            if (isInZone) {
-                let wBox = document.getElementById('warningBox');
-                if(wBox) wBox.style.display = "none";
-                hasNotifiedExit = false; 
-                
-                if (!session && locked && lockedKat && !hasNotifiedEntry) {
-                    hasNotifiedEntry = true;
-                    sendNotification("ANDA SUDAH SAMPAI!", "Sila klik di sini untuk buka aplikasi", "wake-up-entry");
-                }
-
-                if (!session && locked && lockedKat && !isSubmitting) {
-                    if (inZoneStart > 0) {
-                        let elapsed = now - inZoneStart;
-                        let remainingSec = Math.ceil((MS_IN_DELAY - elapsed) / 1000);
-                        
-                        if(statusEl) statusEl.innerHTML += ` <br>[AUTO-PUNCH: ${remainingSec}s]`;
-                        
-                        if (remainingSec <= 0) {
-                            hantarMasuk(true);
-                            inZoneStart = 0; 
-                        }
-                    }
-                }
-            } 
-            else {
-                hasNotifiedEntry = false; 
-
-                if (session && !hasNotifiedExit) {
-                    hasNotifiedExit = true;
-                    sendNotification("ANDA TELAH KELUAR KAWASAN!", "Anda dikesan telah meninggalkan pejabat. Klik di sini untuk sahkan waktu balik (Punch Out).", "wake-up-exit");
-                }
-
-                if (session && !isSubmitting) {
-                     if (outZoneStart > 0) {
-                         let elapsed = now - outZoneStart;
-                         let remainingSec = Math.ceil((MS_OUT_DELAY - elapsed) / 1000);
-                         
-                         let warnBox = document.getElementById('warningBox');
-                         if(warnBox) {
-                             warnBox.style.display = "block";
-                             warnBox.innerHTML = `AMARAN! KELUAR ZON.<br>AUTO PUNCH-OUT DALAM <span style="font-size:1.5em">${remainingSec}</span> S`;
-                         }
-
-                         if (remainingSec <= 0) {
-                             hantarKeluar(true);
-                             outZoneStart = 0;
-                         }
-                     }
-                } else {
-                     let wBox = document.getElementById('warningBox');
-                     if(wBox) wBox.style.display = "none";
-                }
-            }
-        }
-
-        function startRadar() {
-            if (navigator.geolocation) {
-                navigator.geolocation.watchPosition(pos => {
-                    lastLat = pos.coords.latitude; lastLng = pos.coords.longitude;
-                    currentDist = calcDist(lastLat, lastLng, SCHOOL_LAT, SCHOOL_LNG); 1
-                    isInZone = (currentDist <= RADIUS_METER);
-                    if (currentDist > RADIUS_RESET_AUTO_IN) {
-                        localStorage.removeItem('ehadir_auto_in_blocked');
-                    }
-                    if (isInZone) {
-                        if (!inZoneStart) inZoneStart = Date.now();
-                        outZoneStart = 0; 
-                    } else {
-                        if (!outZoneStart) outZoneStart = Date.now();
-                        inZoneStart = 0; 
-                    }
-                }, null, {enableHighAccuracy: true, maximumAge: 0, timeout: 5000});
-            }
-        }
-
-        function calcDist(a,b,c,d){var R=6371e3,x=a*Math.PI/180,y=c*Math.PI/180,k=(c-a)*Math.PI/180,l=(d-b)*Math.PI/180,z=Math.sin(k/2)*Math.sin(k/2)+Math.cos(x)*Math.cos(y)*Math.sin(l/2)*Math.sin(l/2);return R*2*Math.atan2(Math.sqrt(z),Math.sqrt(1-z));}
-
-        async function initBackgroundService() {
-            if ("Notification" in window) {
-                 if(Notification.permission !== "granted") {
-                      await Notification.requestPermission();
-                 }
-            }
-            if ('wakeLock' in navigator) {
-                const requestLock = async () => {
-                    try {
-                        wakeLock = await navigator.wakeLock.request('screen');
-                        let am = document.getElementById('autoModeIndicator');
-                        if(am) am.style.display = 'block';
-                        wakeLock.addEventListener('release', () => { console.log('Wake Lock Released'); });
-                    } catch (err) { console.error(`${err.name}, ${err.message}`); }
-                };
-                await requestLock();
-                document.addEventListener('visibilitychange', async () => {
-                    if (wakeLock !== null && document.visibilityState === 'visible') {
-                        await requestLock();
-                    } else {
-                         await requestLock();
-                    }
-                });
-            }
-        }
-        // ------------------------------------------------------------------------------------------------------------------------------------------------------------------- 
-    </script>
-    <!-- ====================================================================== -->
-
-    <link rel="manifest" href="manifest.json">
-    <meta name="theme-color" content="#1e3c72">
-    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
-    
-    <style>
-        body { font-family: 'Poppins', sans-serif; background: #f0f2f5; color: #333; margin: 0; padding: 15px; display: flex; justify-content: center; min-height: 100vh; }
-        .container { background: white; padding: 0; border-radius: 25px; width: 100%; max-width: 420px; text-align: center; position: relative; box-shadow: 0 15px 35px rgba(0,0,0,0.1); overflow: hidden; padding-bottom: 30px; }
-        
-        .header-bg { background: linear-gradient(to right, #141e30, #243b55); padding: 15px 20px 30px 20px; color: white; border-radius: 0 0 25px 25px; box-shadow: 0 10px 25px rgba(0,0,0,0.2); margin-bottom: 25px; position: relative; }
-        .top-bar-row { display: flex; justify-content: center; align-items: center; gap: 10px; font-size: 11px; color: #cfd8dc; font-weight: 400; letter-spacing: 0.5px; padding-bottom: 15px; border-bottom: 1px solid rgba(255,255,255,0.1); margin-bottom: 20px; white-space: nowrap; text-transform: uppercase; }
-        
-        .main-title-block { display: flex; flex-direction: column; align-items: center; }
-        .title-small { font-size: 10px; letter-spacing: 3px; text-transform: uppercase; color: #6dd5ed; margin-bottom: 5px; font-weight: 600; }
-        .title-big { font-size: 24px; font-weight: 800; text-transform: uppercase; letter-spacing: 1px; line-height: 1.1; background: -webkit-linear-gradient(#fff, #a8c0ff); -webkit-background-clip: text; -webkit-text-fill-color: transparent; text-shadow: 0 2px 10px rgba(0,0,0,0.2); margin: 2px 0; }
-
-        .content-padding { padding: 0 20px; }
-        select, input, textarea { width: 100%; padding: 14px; margin-bottom: 12px; border: 2px solid #f1f3f5; background: #f8f9fa; border-radius: 12px; font-size: 14px; box-sizing: border-box; font-family: inherit; outline: none; transition: 0.3s; color: #333; }
-        select:focus, input:focus { border-color: #1e3c72; background: #fff; }
-        textarea { resize: vertical; min-height: 80px; display: none; border: 2px solid #f39c12; background: #fffcf5; } /* HIDDEN ALASAN */
-
-        /* === NEW CSS FOR NAME LOCK & AVATAR === */
-        .input-group { position: relative; display: flex; align-items: center; width: 100%; margin-bottom: 12px; }
-        /* Tambah padding right supaya dua butang muat */
-        .input-group input { margin-bottom: 0; padding-right: 90px; }
-        
-        .lock-btn { position: absolute; right: 5px; top: 50%; transform: translateY(-50%); cursor: pointer; background: #ecf0f1; border: none; z-index: 5; padding: 6px; border-radius: 50%; transition: 0.2s; width: 35px; height: 35px; display: flex; align-items: center; justify-content: center; }
-        .lock-btn:hover { background: #dfe6e9; }
-        .lock-btn:active { transform: translateY(-50%) scale(0.9); }
-        .lock-btn:disabled { opacity: 0.5; cursor: not-allowed; }
-        
-        .avatar-btn { right: 48px; background: transparent; } /* Butang avatar sebelah butang lock */
-
-        /* Style Khas bila lock aktif (Kuning) */
-        .btn-yellow { background: #f1c40f !important; box-shadow: 0 0 10px rgba(241, 196, 15, 0.5); border: 2px solid #f39c12; }
-
-        /* Style Modal Avatar Grid */
-        .avatar-grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 10px; max-height: 300px; overflow-y: auto; padding: 10px; }
-        .avatar-option { width: 100%; aspect-ratio: 1/1; cursor: pointer; border-radius: 50%; border: 2px solid transparent; transition: 0.2s; padding: 2px; background: #f8f9fa; }
-        .avatar-option:hover { border-color: #1e3c72; background: #e8f5e9; transform: scale(1.1); }
-        .avatar-option.selected { border-color: #27ae60; background: #d4edda; box-shadow: 0 0 10px rgba(39, 174, 96, 0.3); }
-        .avatar-option img { width: 100%; height: 100%; object-fit: contain; }
-        /* ============================== */
-
-        .btn { width: 100%; padding: 16px; background: #1e3c72; color: white; border: none; border-radius: 12px; font-size: 15px; font-weight: 600; cursor: pointer; margin-top: 8px; box-shadow: 0 4px 10px rgba(30, 60, 114, 0.2); transition: 0.2s; letter-spacing: 0.5px; display: flex; align-items: center; justify-content: center; gap: 8px; }
-        .btn:active { transform: scale(0.98); }
-        .btn:disabled { background: #bdc3c7; cursor: not-allowed; box-shadow: none; opacity: 0.7; }
-        .btn-keluar { background: linear-gradient(to right, #cb2d3e, #ef473a); }
-        .btn-pelawat { background: linear-gradient(to right, #11998e, #38ef7d); margin-top: 15px; }
-        .btn-cancel { background: #7f8c8d; margin-top: 10px; }
-        
-        #dashboardPanel { display: none; background: #fff; padding: 20px; border-radius: 15px; border: 1px solid #e1e4e8; margin-bottom: 20px; box-shadow: 0 5px 15px rgba(0,0,0,0.03); }
-        .user-welcome { font-size: 18px; font-weight: 700; color: #1e3c72; margin-bottom: 2px; display: flex; align-items: center; justify-content: center; gap: 8px;}
-        .locked-msg { font-size: 11px; color: #95a5a6; margin-bottom: 15px; }
-        
-        #pelawatPanel { display: none; border: 2px dashed #27ae60; padding: 15px; border-radius: 15px; background: #f0fdf4; margin-bottom: 20px; }
-        
-        /* STYLO GIANT CAMERA CSS */
-        .giant-cam-btn { 
-            width: 100%; height: 160px; 
-            background: linear-gradient(135deg, #134e5e, #71b280); 
-            border-radius: 20px; 
-            display: flex; flex-direction: column; align-items: center; justify-content: center; 
-            box-shadow: 0 10px 20px rgba(0,0,0,0.15); 
-            cursor: pointer; transition: 0.2s; border: 2px solid rgba(255,255,255,0.3);
-            position: relative; overflow: hidden;
-        }
-        .giant-cam-btn:active { transform: scale(0.96); }
-        .giant-cam-icon { width: 70px; height: 70px; margin-bottom: 10px; filter: drop-shadow(0 2px 5px rgba(0,0,0,0.2)); }
-        .giant-cam-text { font-size: 12px; font-weight: 800; color: white; letter-spacing: 1.5px; text-transform: uppercase; }
-        .giant-pulse { animation: pulseGlow 2s infinite; }
-        @keyframes pulseGlow { 0% { box-shadow: 0 0 0 0 rgba(113, 178, 128, 0.4); } 70% { box-shadow: 0 0 0 10px rgba(113, 178, 128, 0); } 100% { box-shadow: 0 0 0 0 rgba(113, 178, 128, 0); } }
-
-        #previewImg { width: 100%; margin-top: 10px; border-radius: 10px; display: none; border: 2px solid #333; max-height: 250px; object-fit: cover; }
-        
-        .list-header { display: flex; justify-content: space-between; align-items: center; margin-top: 25px; border-bottom: 2px solid #f1f1f1; padding-bottom: 10px; margin-bottom: 10px; }
-        .list-header span { font-weight: 700; color: #1e3c72; font-size: 14px; display: flex; align-items: center; gap: 5px; }
-        .list-container { text-align: left; margin-top: 5px; max-height: 300px; overflow-y: auto; }
-        
-        .user-card { background: #fff; padding: 12px; border: 1px solid #f0f0f0; display: flex; justify-content: space-between; align-items: center; border-left: 4px solid #1e3c72; border-radius: 8px; margin-bottom: 8px; box-shadow: 0 2px 5px rgba(0,0,0,0.03); }
-        .user-card.offline-item { border-left: 4px solid #e67e22; background: #fffcf5; }
-        .user-info { flex-grow: 1; min-width: 0; padding-right: 8px; display: flex; flex-direction: column; justify-content: center; }
-        .user-info strong { font-size: 13px; color: #2c3e50; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-        .user-details { font-size: 11px; color: #7f8c8d; margin-top: 3px; display: flex; align-items: center; gap: 5px; }
-        
-        /* STYLE JAM RANDIK */
-        .live-timer { 
-            color: #d35400; 
-            font-weight: 700; 
-            font-family: 'Courier New', Courier, monospace; 
-            background: #fff5e6; 
-            padding: 2px 8px; 
-            border-radius: 4px; 
-            border: 1px solid #fae5d3; 
-            min-width: 70px; 
-            text-align: center; 
-            display: inline-flex;
-            align-items: center;
-            gap: 4px;
-            font-size: 11px; 
-        }
-
-        .list-actions { display: flex; gap: 5px; align-items: center; flex-shrink: 0; }
-        .icon-btn { cursor: pointer; font-size: 14px; width: 28px; height: 28px; border-radius: 6px; display: flex; align-items: center; justify-content: center; background: #f8f9fa; border: 1px solid #eee; transition: background 0.2s; }
-        .icon-btn:hover { background: #e2e6ea; }
-
-        #scheduleInfo { display: none; background: transparent; padding: 0; margin-bottom: 15px; text-align: center; }
-        .schedule-minimal { display: flex; justify-content: center; gap: 10px; align-items: center; }
-        
-        /* UBAH SUAI UI: Time Pill yang lebih moden dan canggih */
-        .time-pill { 
-            background: rgba(255, 255, 255, 0.95); 
-            padding: 10px 18px; 
-            border-radius: 30px; 
-            font-size: 11px; 
-            font-weight: 700; 
-            display: flex; 
-            align-items: center; 
-            gap: 8px; 
-            border: 1px solid rgba(0,0,0,0.06); 
-            box-shadow: 0 5px 15px rgba(0,0,0,0.08); 
-            backdrop-filter: blur(5px);
-            transition: transform 0.2s;
-        }
-        .time-pill:hover { transform: translateY(-2px); }
-        
-        /* Animasi Pop-In untuk visual canggih */
-        .pop-in { animation: popIn 0.6s cubic-bezier(0.34, 1.56, 0.64, 1); }
-        @keyframes popIn { 
-            0% { opacity: 0; transform: scale(0.8) translateY(-10px); } 
-            100% { opacity: 1; transform: scale(1) translateY(0); } 
-        }
-
-        #imageModal { display: none; position: fixed; z-index: 9999; left: 0; top: 0; width: 100%; height: 100%; overflow: auto; background-color: rgba(0,0,0,0.9); align-items: center; justify-content: center; }
-        .modal-content { margin: auto; display: block; max-width: 90%; max-height: 80%; border-radius: 10px; border: 2px solid white; }
-        .close-modal { position: absolute; top: 20px; right: 35px; color: #f1f1f1; font-size: 40px; font-weight: bold; cursor: pointer; }
-
-        #warningBox { display: none; position: fixed; bottom: 0; left: 0; width: 100%; background: #c0392b; color: white; padding: 15px; text-align: center; z-index: 9999; font-weight: bold; box-shadow: 0 -5px 15px rgba(0,0,0,0.2); animation: pulseWarn 1s infinite; }
-        @keyframes pulseWarn { 0% { background: #c0392b; } 50% { background: #e74c3c; } 100% { background: #c0392b; } }
-        
-        #loadingConfig { font-size: 11px; color: #e67e22; display: none; margin-bottom: 5px; font-style: italic; }
-        #statusText { font-size: 11px; font-weight: 600; margin-bottom: 15px; color: #95a5a6; background: #f8f9fa; display: inline-block; padding: 4px 12px; border-radius: 15px; display: inline-flex; align-items: center; gap: 5px; }
-
-        /* --- 3D ICONS STYLES --- */
-        .icon-3d-mini { width: 16px; height: 16px; vertical-align: middle; margin-right: 2px; filter: drop-shadow(0 1px 1px rgba(0,0,0,0.2)); }
-        .icon-3d-std { width: 22px; height: 22px; vertical-align: middle; margin-right: 5px; filter: drop-shadow(0 2px 2px rgba(0,0,0,0.1)); }
-        .icon-3d-lg { width: 32px; height: 32px; vertical-align: middle; }
-        .icon-3d-xl { width: 64px; height: 64px; margin-bottom: 10px; }
-        
-        @keyframes spin3d { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
-        .spin-3d { animation: spin3d 2s linear infinite; }
-
-        #customModal, #avatarModalContainer { display: none; position: fixed; z-index: 10000; left: 0; top: 0; width: 100%; height: 100%; background-color: rgba(0,0,0,0.6); backdrop-filter: blur(5px); align-items: center; justify-content: center; animation: fadeIn 0.3s; }
-        .custom-modal-content { background: white; padding: 30px 25px; border-radius: 20px; width: 85%; max-width: 350px; text-align: center; box-shadow: 0 20px 50px rgba(0,0,0,0.3); transform: scale(0.9); animation: popUp 0.3s forwards; }
-        @keyframes popUp { to { transform: scale(1); } }
-        .modal-icon-top { font-size: 50px; margin-bottom: 15px; display: block; }
-        .modal-title { font-size: 18px; font-weight: 700; color: #2c3e50; margin-bottom: 10px; }
-        .modal-msg { font-size: 13px; color: #555; margin-bottom: 20px; line-height: 1.5; }
-        .modal-btn-row { display: flex; gap: 10px; justify-content: center; }
-        .modal-btn { flex: 1; padding: 12px; border-radius: 10px; border: none; font-weight: 600; cursor: pointer; font-size: 13px; }
-        .btn-ok { background: #1e3c72; color: white; }
-        .btn-cancel-modal { background: #ecf0f1; color: #7f8c8d; }
-
-        /* Status Bar untuk Offline/Sync */
-        #syncStatusBar { display: none; position: fixed; top: 0; left: 0; width: 100%; padding: 10px; text-align: center; z-index: 10001; font-size: 12px; font-weight: 600; color: white; box-shadow: 0 2px 10px rgba(0,0,0,0.2); }
-        
-        #autoModeIndicator { background: linear-gradient(to right, #6a11cb, #2575fc); color: white; padding: 5px; font-size: 10px; font-weight: 700; text-align: center; margin-bottom: 15px; border-radius: 5px; box-shadow: 0 3px 6px rgba(0,0,0,0.1); display: none; }
-
-    </style>
-</head>
-<body oncontextmenu="return false;"> 
-
-    <div id="syncStatusBar"></div>
-    <div id="warningBox"> AMARAN! KELUAR ZON.<br>AUTO-CHECKOUT DALAM <span id="countDown">10</span>S</div>
-
-    <div id="customModal">
-        <div class="custom-modal-content">
-            <span id="modalIcon" class="modal-icon-top"></span>
-            <div id="modalTitle" class="modal-title">Tajuk</div>
-            <div id="modalMsg" class="modal-msg">Mesej di sini...</div>
-            <div class="modal-btn-row" id="modalBtnRow">
-                <button class="modal-btn btn-ok" onclick="closeCustomModal()">Faham</button>
-            </div>
-        </div>
-    </div>
-
-    <!-- MODAL PILIH AVATAR -->
-    <div id="avatarModalContainer">
-        <div class="custom-modal-content">
-            <div class="modal-title">PILIH AVATAR ANDA</div>
-            <div class="modal-msg">Pilih ikon yang sesuai dengan gaya anda.</div>
-            <div id="avatarGrid" class="avatar-grid">
-                <!-- ICONS INJECTED VIA JS -->
-            </div>
-            <div class="modal-btn-row" style="margin-top:15px;">
-                <button class="modal-btn btn-cancel-modal" onclick="closeAvatarModal()">Tutup</button>
-            </div>
-        </div>
-    </div>
-
-    <div id="imageModal">
-        <span class="close-modal" onclick="closeModal()">&times;</span>
-        <img class="modal-content" id="imgFull">
-    </div>
-
-    <div class="container">
-        
-        <div class="header-bg">
-            <div class="top-bar-row">
-                <span>
-                    <img src="https://cdn-icons-png.flaticon.com/128/4250/4250320.png" class="icon-3d-mini"> 
-                    <span id="dateDisplay">--/--/--</span>
-                </span> 
-                <span>|</span> 
-                <span>
-                    <img src="https://cdn-icons-png.flaticon.com/128/2088/2088617.png" class="icon-3d-mini"> 
-                    <span id="clockDisplay">--:--</span>
-                </span> 
-                <span>|</span> 
-                <span>
-                    <img src="https://cdn-icons-png.flaticon.com/128/4358/4358667.png" class="icon-3d-mini"> 
-                    <span id="hijriDisplay">...</span>
-                </span>
-            </div>
-
-            <div class="main-title-block">
-                <div class="title-small">SISTEM PENGURUSAN</div>
-                <div class="title-big">E-HADIR</div>
-                <div class="title-big">SK SELAMA (K)</div>
-            </div>
-        </div>
-
-        <div class="content-padding">
-            <div id="autoModeIndicator">MODE AUTO</div>
-            
-            <div id="statusText">
-                <img src="https://cdn-icons-png.flaticon.com/128/9077/9077975.png" class="icon-3d-mini spin-3d"> 
-                Mencari GPS...
-            </div>
-
-            <div id="dashboardPanel">
-                <span class="user-welcome">
-                    <img id="userAvatarDash" src="https://cdn-icons-png.flaticon.com/128/4140/4140047.png" class="icon-3d-lg"> 
-                    Hai, <span id="sessionName">--</span>
-                </span>
-                <div class="locked-msg">Auto Check-In Berjaya.</div>
-                
-                <div id="dashboardSchedule" style="font-size:12px; color:#2c3e50; background:#fff3cd; padding:10px; border-radius:8px; margin-bottom:15px; display:none; border: 1px solid #ffeeba;">
-                    Waktu Pulang Rasmi: <span id="userExitTime" style="font-weight:bold;">--:--</span>
-                </div>
-
-                <p id="dynamicStatus" style="margin:0 0 15px 0; font-size:11px; color:#27ae60; font-weight:700; letter-spacing:0.5px; text-transform:uppercase;">STATUS: SEDANG BERTUGAS</p>
-                
-                <!-- HIDDEN ALASAN INPUT FOR AUTO MODE -->
-                <textarea id="alasanKeluar" style="display:none;" placeholder="Mohon nyatakan sebab pulang awal untuk makluman pentadbir..."></textarea>
-                
-                <button id="btnKeluar" class="btn btn-keluar" onclick="hantarKeluar(false)">
-                    <img src="https://cdn-icons-png.flaticon.com/128/3580/3580154.png" class="icon-3d-std"> DAFTAR KELUAR (MANUAL)
-                </button>
-                
-                <div style="margin-top: 20px; border-top: 1px solid #eee; padding-top: 15px;">
-                    <button class="btn btn-pelawat" onclick="showPelawatForm()" style="font-size:13px; padding: 12px;">
-                        <img src="https://cdn-icons-png.flaticon.com/128/3135/3135768.png" class="icon-3d-std"> BANTU DAFTAR PELAWAT
-                    </button>
-                </div>
-            </div>
-
-            <div id="defaultForm">
-                <div id="loadingConfig">
-                    <img src="https://cdn-icons-png.flaticon.com/128/189/189792.png" class="icon-3d-mini spin-3d"> Sedang menyemak jadual terkini...
-                </div>
-                <div id="scheduleInfo"></div>
-                <select id="kategori" onchange="checkKategori(); updateScheduleInfo();">
-                    <option value="" disabled selected>-- PILIH KATEGORI --</option>
-                    <option value="GURU">GURU</option>
-                    <option value="AKP">AKP</option>
-                    <option value="KEBERSIHAN">KEBERSIHAN</option>
-                    <option value="PELAWAT">PELAWAT (AWAM)</option>
-                </select>
-                
-                <!-- INPUT NAMA WITH LOCK & AVATAR BUTTONS -->
-                <div class="input-group">
-                    <input type="text" id="nama" placeholder="NAMA PENUH (HURUF BESAR)" style="text-transform:uppercase">
-                    
-                    <!-- AVATAR BUTTON -->
-                    <button id="avatarBtn" class="lock-btn avatar-btn" onclick="openAvatarModal()" title="Pilih Avatar">
-                        <img id="currentAvatarMini" src="https://cdn-icons-png.flaticon.com/128/4140/4140048.png" class="icon-3d-mini">
-                    </button>
-
-                    <!-- LOCK BUTTON -->
-                    <button id="lockBtn" class="lock-btn" onclick="toggleLockName()" title="Kunci Nama">
-                        <img src="https://cdn-icons-png.flaticon.com/128/2550/2550226.png" class="icon-3d-mini" id="lockIconImg" style="filter:opacity(0.6)">
-                    </button>
-                </div>
-                
-                <!-- HIDDEN ALASAN INPUT FOR AUTO MODE -->
-                <textarea id="alasanMasuk" style="display:none;" placeholder="Maaf, anda lewat sedikit. Mohon nyatakan sebab:"></textarea>
-                
-                <div style="font-size:10px; color:#e67e22; margin-bottom:10px;">Sila tekan 'KUNCI' Nama & Kategori </div>
-
-                <button id="btnMainSubmit" class="btn" onclick="hantarMasuk(false)">
-                    <img src="https://cdn-icons-png.flaticon.com/128/9402/9402342.png" class="icon-3d-std"> DAFTAR MASUK (MANUAL)
-                </button>
-
-                <!-- NEW: Butang Pelawat Muncul Bila Lock -->
-                <button id="btnPelawatLocked" class="btn btn-pelawat" onclick="showPelawatForm()" style="display:none; margin-top:10px;">
-                    <img src="https://cdn-icons-png.flaticon.com/128/3135/3135768.png" class="icon-3d-std"> BANTU DAFTAR PELAWAT
-                </button>
-            </div>
-
-            <div id="pelawatPanel">
-                <h3 style="color:#27ae60; margin:0 0 5px 0; display:flex; align-items:center; justify-content:center; gap:5px;">
-                    <img src="https://cdn-icons-png.flaticon.com/128/3687/3687416.png" class="icon-3d-lg"> MOD PELAWAT
-                </h3>
-                <p style="font-size:11px; color:#666; margin-bottom:15px;">Sila ambil gambar & isi nama pelawat.</p>
-                
-                <div style="margin: 15px 0;">
-                    <label class="giant-cam-btn giant-pulse">
-                        <img src="https://cdn-icons-png.flaticon.com/128/3687/3687416.png" class="giant-cam-icon">
-                        <span class="giant-cam-text">SNAP FOTO</span>
-                        <input type="file" accept="image/*" capture="environment" style="display:none" onchange="processImage(this)">
-                    </label>
-                </div>
-
-                <input type="text" id="namaPelawatInput" placeholder="NAMA PENUH PELAWAT" style="text-transform:uppercase; margin-top:10px;">
-
-                <img id="previewImg">
-                <input type="hidden" id="base64Foto">
-                <button id="btnPelawatSubmit" class="btn btn-pelawat" onclick="hantarPelawat()">
-                    <img src="https://cdn-icons-png.flaticon.com/128/9402/9402342.png" class="icon-3d-std"> HANTAR DATA
-                </button>
-                <button class="btn btn-cancel" onclick="cancelPelawat">BATAL</button>
-            </div>
-
-            <div class="list-header">
-                <span>
-                    <img src="https://cdn-icons-png.flaticon.com/128/942/942799.png" class="icon-3d-std"> 
-                    Rekod Hari Ini (<span id="count">0</span>)
-                </span>
-                <button onclick="loadList()" style="border:none; background:none; cursor:pointer;">
-                    <img src="https://cdn-icons-png.flaticon.com/128/3031/3031718.png" class="icon-3d-std">
-                </button>
-            </div>
-            <div id="listContainer" class="list-container">
-                <div style="padding:20px; color:#999; font-size:12px;">Memuatkan data...</div>
-            </div>
-            
-        </div>
-    </div>
-
-<script>
-    // ==========================================
-    //       LOGIK UI & EVENT LISTENERS
-    // ==========================================
-    
-    if ('serviceWorker' in navigator) {
-        window.addEventListener('load', () => {
-            navigator.serviceWorker.register('sw.js').then(reg => {
-                console.log('SW Berjaya:', reg.scope);
-                if ('SyncManager' in window) {
-                    reg.sync.register('sync-attendance').catch(err => console.log("Sync bg gagal", err));
-                }
-            }).catch(err => console.log('SW Gagal:', err));
-        });
+    /* Neumorphic Cards */
+    .neu-card {
+      background: linear-gradient(145deg, #ffffff, #e6e9ec);
+      box-shadow: 20px 20px 60px #c5c8cb, -20px -20px 60px #ffffff;
+      border-radius: 24px;
+      transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
     }
-
-    window.addEventListener('online', () => {
-        console.log("Internet dikesan! Memulakan sinkronisasi...");
-        showSyncBar("Internet Kembali Pulih. Menyegerakkan data...", "#2ecc71");
-        if ('serviceWorker' in navigator && 'SyncManager' in window) {
-            navigator.serviceWorker.ready.then(sw => { return sw.sync.register('sync-attendance'); });
-        } else {
-            fetch('/sw.js'); 
-        }
-        if(typeof syncOfflineData === 'function') syncOfflineData();
-    });
-
-    window.addEventListener('offline', () => {
-        showSyncBar("MOD OFFLINE: Data akan disimpan dalam telefon.", "#e74c3c");
-    });
-
-    function showSyncBar(msg, color) {
-        const bar = document.getElementById('syncStatusBar');
-        if(bar) {
-            bar.innerText = msg;
-            bar.style.background = color;
-            bar.style.display = 'block';
-            if(color === "#2ecc71") setTimeout(() => { bar.style.display = 'none'; }, 4000);
-        }
+    .neu-card:hover { transform: translateY(-2px); box-shadow: 25px 25px 75px #c5c8cb, -25px -25px 75px #ffffff; }
+    
+    /* Buttons */
+    .neu-button {
+      background: linear-gradient(145deg, #ffffff, #e6e9ec);
+      box-shadow: 8px 8px 20px #c5c8cb, -8px -8px 20px #ffffff;
+      border-radius: 16px;
+      transition: all 0.2s;
+      cursor: pointer;
+      border: none;
     }
+    .neu-button:active { box-shadow: inset 4px 4px 12px #c5c8cb, inset -4px -4px 12px #ffffff; transform: scale(0.98); }
+    
+    .neu-button-primary {
+      background: linear-gradient(145deg, #10B981, #059669);
+      box-shadow: 8px 8px 20px #c5c8cb, -8px -8px 20px #ffffff;
+      color: white;
+      border: none;
+      cursor: pointer;
+    }
+    .neu-button-primary:active { box-shadow: inset 4px 4px 12px rgba(0,0,0,0.2), inset -4px -4px 12px rgba(255,255,255,0.1); }
+    .neu-button-primary:disabled { opacity: 0.5; cursor: not-allowed; }
+    
+    .neu-button-danger {
+      background: linear-gradient(145deg, #EF4444, #DC2626);
+      box-shadow: 8px 8px 20px #c5c8cb, -8px -8px 20px #ffffff;
+      color: white;
+      border: none;
+      cursor: pointer;
+    }
+    
+    /* Inputs */
+    .neu-input {
+      background: linear-gradient(145deg, #e6e9ec, #ffffff);
+      box-shadow: inset 6px 6px 15px #c5c8cb, inset -6px -6px 15px #ffffff;
+      border-radius: 12px;
+      border: none;
+      outline: none;
+      padding: 12px 16px;
+      width: 100%;
+      font-size: 14px;
+      transition: all 0.2s;
+    }
+    .neu-input:focus { box-shadow: inset 8px 8px 20px #b8bbbe, inset -8px -8px 20px #ffffff; }
+    
+    .neu-select {
+      background: linear-gradient(145deg, #e6e9ec, #ffffff);
+      box-shadow: inset 6px 6px 15px #c5c8cb, inset -6px -6px 15px #ffffff;
+      border-radius: 12px;
+      border: none;
+      outline: none;
+      appearance: none;
+      cursor: pointer;
+      padding: 12px 16px;
+      width: 100%;
+      font-size: 14px;
+    }
+    
+    /* LED Indicators */
+    .led-3d {
+      width: 16px;
+      height: 16px;
+      border-radius: 50%;
+      position: relative;
+    }
+    .led-3d::before {
+      content: '';
+      position: absolute;
+      top: 2px;
+      left: 2px;
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: rgba(255,255,255,0.8);
+    }
+    
+    .led-green {
+      background: radial-gradient(circle at 30% 30%, #4ade80, #16a34a, #15803d);
+      box-shadow: 0 0 10px #22c55e, 0 0 20px #22c55e80, 0 0 30px #22c55e40, inset 0 -3px 6px rgba(0,0,0,0.3);
+      animation: pulse-green 2s infinite;
+    }
+    .led-red {
+      background: radial-gradient(circle at 30% 30%, #f87171, #dc2626, #b91c1c);
+      box-shadow: 0 0 10px #ef4444, 0 0 20px #ef444480, 0 0 30px #ef444440, inset 0 -3px 6px rgba(0,0,0,0.3);
+      animation: pulse-red 2s infinite;
+    }
+    .led-blue {
+      background: radial-gradient(circle at 30% 30%, #60a5fa, #3b82f6, #2563eb);
+      box-shadow: 0 0 10px #3b82f6, 0 0 20px #3b82f680, 0 0 30px #3b82f640, inset 0 -3px 6px rgba(0,0,0,0.3);
+      animation: pulse-blue 2s infinite;
+    }
+    .led-gray {
+      background: radial-gradient(circle at 30% 30%, #9ca3af, #6b7280, #4b5563);
+      box-shadow: 0 0 5px #6b7280, inset 0 -3px 6px rgba(0,0,0,0.3);
+    }
+    
+    @keyframes pulse-green { 0%, 100% { box-shadow: 0 0 10px #22c55e, 0 0 20px #22c55e80, 0 0 30px #22c55e40, inset 0 -3px 6px rgba(0,0,0,0.3); } 50% { box-shadow: 0 0 15px #22c55e, 0 0 30px #22c55e80, 0 0 45px #22c55e40, inset 0 -3px 6px rgba(0,0,0,0.3); } }
+    @keyframes pulse-red { 0%, 100% { box-shadow: 0 0 10px #ef4444, 0 0 20px #ef444480, 0 0 30px #ef444440, inset 0 -3px 6px rgba(0,0,0,0.3); } 50% { box-shadow: 0 0 15px #ef4444, 0 0 30px #ef444480, 0 0 45px #ef444440, inset 0 -3px 6px rgba(0,0,0,0.3); } }
+    @keyframes pulse-blue { 0%, 100% { box-shadow: 0 0 10px #3b82f6, 0 0 20px #3b82f680, 0 0 30px #3b82f640, inset 0 -3px 6px rgba(0,0,0,0.3); } 50% { box-shadow: 0 0 15px #3b82f6, 0 0 30px #3b82f680, 0 0 45px #3b82f640, inset 0 -3px 6px rgba(0,0,0,0.3); } }
+    
+    /* Floating Button */
+    .floating-btn {
+      position: fixed;
+      bottom: 100px;
+      right: 20px;
+      width: 64px;
+      height: 64px;
+      border-radius: 50%;
+      background: linear-gradient(145deg, #8B5CF6, #7C3AED);
+      box-shadow: 8px 8px 20px #c5c8cb, -8px -8px 20px #ffffff, 0 0 20px #8B5CF680;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      z-index: 1000;
+      transition: all 0.3s;
+      border: none;
+    }
+    .floating-btn:hover { transform: scale(1.1); }
+    
+    /* Modals */
+    .modal-backdrop {
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,0.5);
+      backdrop-filter: blur(4px);
+      z-index: 1500;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 20px;
+    }
+    .modal-backdrop.hidden { display: none; }
+    
+    .modal-content {
+      background: white;
+      border-radius: 24px;
+      max-width: 500px;
+      width: 100%;
+      max-height: 90vh;
+      overflow-y: auto;
+      box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+    }
+    
+    /* Camera */
+    .camera-modal { position: fixed; inset: 0; background: rgba(0,0,0,0.95); z-index: 2000; display: flex; flex-direction: column; align-items: center; justify-content: center; }
+    .camera-modal.hidden { display: none; }
+    .camera-viewfinder { width: 100%; max-width: 400px; aspect-ratio: 3/4; border-radius: 24px; overflow: hidden; position: relative; }
+    .camera-viewfinder video { width: 100%; height: 100%; object-fit: cover; }
+    
+    /* Toast */
+    .toast {
+      position: fixed;
+      bottom: 20px;
+      left: 50%;
+      transform: translateX(-50%);
+      padding: 16px 24px;
+      border-radius: 16px;
+      background: #1f2937;
+      color: white;
+      font-weight: 500;
+      z-index: 3000;
+      animation: slide-up 0.3s ease-out;
+    }
+    @keyframes slide-up { from { opacity: 0; transform: translateX(-50%) translateY(20px); } to { opacity: 1; transform: translateX(-50%) translateY(0); } }
+    
+    /* Tab Buttons */
+    .tab-btn {
+      padding: 10px 16px;
+      border-radius: 12px;
+      font-weight: 600;
+      font-size: 13px;
+      transition: all 0.2s;
+      background: transparent;
+      color: #6b7280;
+      border: none;
+      cursor: pointer;
+    }
+    .tab-btn.active {
+      background: linear-gradient(145deg, #ffffff, #e6e9ec);
+      box-shadow: 4px 4px 10px #c5c8cb, -4px -4px 10px #ffffff;
+      color: #1f2937;
+    }
+    
+    /* Record Card */
+    .record-card {
+      background: linear-gradient(145deg, #ffffff, #f1f3f5);
+      box-shadow: 8px 8px 20px #d1d5db, -8px -8px 20px #ffffff;
+      border-radius: 16px;
+      padding: 16px;
+      transition: all 0.2s;
+    }
+    .record-card:hover { transform: translateX(4px); }
+    
+    /* Admin Tab */
+    .admin-tab {
+      padding: 10px 16px;
+      border-radius: 10px;
+      font-size: 14px;
+      font-weight: 600;
+      transition: all 0.2s;
+      background: transparent;
+      color: #6b7280;
+      border: none;
+      cursor: pointer;
+    }
+    .admin-tab.active {
+      background: linear-gradient(145deg, #3b82f6, #2563eb);
+      color: white;
+      box-shadow: 0 4px 12px rgba(59, 130, 246, 0.4);
+    }
+    
+    /* Code Block */
+    .code-block {
+      background: #1e293b;
+      border-radius: 12px;
+      padding: 16px;
+      overflow-x: auto;
+      font-family: 'Courier New', monospace;
+      font-size: 12px;
+      line-height: 1.6;
+      color: #e2e8f0;
+      white-space: pre-wrap;
+      word-break: break-all;
+    }
+    
+    /* Spinner */
+    .spinner {
+      width: 20px;
+      height: 20px;
+      border: 3px solid rgba(255,255,255,0.3);
+      border-top-color: white;
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    
+    /* Scrollbar */
+    ::-webkit-scrollbar { width: 8px; }
+    ::-webkit-scrollbar-track { background: #e6e9ec; border-radius: 4px; }
+    ::-webkit-scrollbar-thumb { background: linear-gradient(180deg, #9ca3af, #6b7280); border-radius: 4px; } /* Fade In */ .animate-fade-in { animation: fadeIn 0.5s ease-out; } @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+  </style>
+  <style>body { box-sizing: border-box; }</style>
+ </head>
+ <body class="h-full">
+  <div class="app-wrapper" id="app"><!-- Status Bar -->
+   <div class="sticky top-0 z-50 bg-gradient-to-b from-white/95 to-white/80 backdrop-blur-lg px-4 py-3 border-b border-gray-100">
+    <div class="flex items-center justify-between max-w-lg mx-auto">
+     <div class="flex items-center gap-3">
+      <div class="w-10 h-10 rounded-xl bg-gradient-to-br from-emerald-400 to-emerald-600 flex items-center justify-center shadow-lg">
+       <svg class="w-6 h-6 text-white" fill="none" stroke="currentColor" viewbox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+       </svg>
+      </div>
+      <div>
+       <h1 id="app-title" class="font-bold text-gray-800 text-lg">Sistem Kehadiran</h1>
+       <p id="school-name" class="text-xs text-gray-500">SK SELAMA (K)</p>
+      </div>
+     </div>
+     <div class="flex items-center gap-4">
+      <div class="flex items-center gap-2"><span class="text-xs text-gray-500">GPS</span>
+       <div id="gps-led" class="led-3d led-gray"></div>
+      </div>
+      <div class="flex items-center gap-2"><span class="text-xs text-gray-500">Talian</span>
+       <div id="online-led" class="led-3d led-gray"></div>
+      </div><button id="admin-btn" class="w-10 h-10 rounded-xl neu-button flex items-center justify-center" title="Admin">
+       <svg class="w-5 h-5 text-gray-600" fill="none" stroke="currentColor" viewbox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" /> <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+       </svg></button>
+     </div>
+    </div>
+   </div><!-- Main Content -->
+   <div id="main-content" class="px-4 py-6 max-w-lg mx-auto pb-32"><!-- Date & Time -->
+    <div class="text-center mb-6">
+     <p id="current-date" class="text-2xl font-bold text-gray-800"></p>
+     <p id="current-time" class="text-4xl font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-emerald-500 to-teal-600"></p>
+    </div><!-- Registration Card -->
+    <div class="neu-card p-6 mb-6">
+     <h2 class="text-lg font-bold text-gray-800 mb-4 flex items-center gap-2">
+      <svg class="w-5 h-5 text-emerald-500" fill="none" stroke="currentColor" viewbox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 16l-4-4m0 0l4-4m-4 4h14m-5 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h7a3 3 0 013 3v1" />
+      </svg> Daftar Kehadiran</h2><!-- Category Selection -->
+     <div class="mb-4"><label class="block text-sm font-medium text-gray-600 mb-2">Kategori Staf</label>
+      <div class="relative"><select id="category-select" class="neu-select pr-10"> <option value="">-- Pilih Kategori --</option> <option value="GURU">👨‍🏫 GURU</option> <option value="AKP">👔 AKP</option> <option value="KEBERSIHAN">🧹 KEBERSIHAN</option> </select>
+       <div class="absolute right-4 top-1/2 -translate-y-1/2 pointer-events-none">
+        <svg class="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewbox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
+        </svg>
+       </div>
+      </div>
+     </div><!-- GURU Section (UPDATED FOR DELIMA) -->
+     <div id="guru-section" class="hidden mb-4">
+      <div class="neu-card p-6 border-t-4 border-red-500 text-center">
+       <img src="https://upload.wikimedia.org/wikipedia/commons/5/53/Google_%22G%22_Logo.svg" class="w-12 h-12 mx-auto mb-3" alt="Google Logo">
+       <h3 class="text-lg font-bold text-gray-800 mb-1">Log Masuk DELIMA</h3>
+       <p class="text-xs text-gray-500 mb-4">Sila gunakan akaun moe-dl.edu.my atau akaun Google yang didaftarkan.</p>
+       <button id="google-login-btn" class="w-full py-3 px-4 rounded-xl bg-white border-2 border-gray-200 hover:bg-gray-50 text-gray-700 font-bold flex items-center justify-center gap-3 transition-all">
+         <img src="https://upload.wikimedia.org/wikipedia/commons/5/53/Google_%22G%22_Logo.svg" class="w-5 h-5">
+         <span>Log Masuk dengan Google</span>
+       </button>
+       <div id="google-user-info" class="hidden mt-4 p-4 bg-green-50 rounded-xl border border-green-200 animate-fade-in">
+          <div class="flex items-center gap-3">
+              <img id="user-avatar" src="" class="w-10 h-10 rounded-full border-2 border-white shadow-sm">
+              <div class="text-left overflow-hidden">
+                  <p class="text-xs text-green-600 font-bold">Log Masuk Berjaya</p>
+                  <p id="google-email" class="font-bold text-gray-800 truncate text-sm"></p>
+              </div>
+          </div>
+       </div>
+      </div>
+     </div><!-- Manual Name Section -->
+     <div id="manual-section" class="hidden mb-4"><label class="block text-sm font-medium text-gray-600 mb-2">Nama Penuh</label> <input type="text" id="staff-name" class="neu-input uppercase" placeholder="MASUKKAN NAMA PENUH">
+     </div><!-- GPS Status -->
+     <div id="gps-status" class="mb-4 p-4 rounded-xl bg-gray-50">
+      <div class="flex items-center justify-between">
+       <div class="flex items-center gap-2">
+        <svg class="w-5 h-5 text-gray-500" fill="none" stroke="currentColor" viewbox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" /> <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
+        </svg><span class="text-sm font-medium text-gray-600">Status Lokasi</span>
+       </div><span id="gps-status-text" class="text-sm font-semibold text-gray-400">Menunggu GPS...</span>
+      </div>
+      <p id="gps-coords" class="text-xs text-gray-400 mt-2 font-mono"></p>
+     </div><!-- Action Buttons -->
+     <div class="grid grid-cols-2 gap-4"><button id="checkin-btn" class="neu-button-primary py-4 rounded-xl font-bold text-white flex items-center justify-center gap-2" disabled>
+       <svg class="w-5 h-5" fill="none" stroke="currentColor" viewbox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 16l-4-4m0 0l4-4m-4 4h14m-5 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h7a3 3 0 013 3v1" />
+       </svg> MASUK </button> <button id="checkout-btn" class="neu-button-danger py-4 rounded-xl font-bold text-white flex items-center justify-center gap-2" disabled>
+       <svg class="w-5 h-5" fill="none" stroke="currentColor" viewbox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
+       </svg> KELUAR </button>
+     </div>
+    </div><!-- Today's Records -->
+    <div class="neu-card p-6">
+     <div class="flex items-center justify-between mb-4">
+      <h2 class="text-lg font-bold text-gray-800 flex items-center gap-2">
+       <svg class="w-5 h-5 text-emerald-500" fill="none" stroke="currentColor" viewbox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
+       </svg> Rekod Hari Ini</h2><span id="record-count" class="px-3 py-1 rounded-full bg-emerald-100 text-emerald-700 text-sm font-bold">0</span>
+     </div><!-- Filter Tabs -->
+     <div class="flex gap-2 mb-4 overflow-x-auto pb-2"><button class="tab-btn active" data-filter="all">Semua</button> <button class="tab-btn" data-filter="GURU">Guru</button> <button class="tab-btn" data-filter="AKP">AKP</button> <button class="tab-btn" data-filter="KEBERSIHAN">Kebersihan</button> <button class="tab-btn" data-filter="PELAWAT">Pelawat</button>
+     </div><!-- Records List -->
+     <div id="records-list" class="space-y-3 max-h-96 overflow-y-auto">
+      <p class="text-center text-gray-400 py-8">Tiada rekod untuk hari ini</p>
+     </div>
+    </div>
+   </div><!-- Floating Visitor Button --> <button id="visitor-fab" class="floating-btn" title="Daftar Pelawat">
+    <svg class="w-8 h-8 text-white" fill="none" stroke="currentColor" viewbox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M18 9v3m0 0v3m0-3h3m-3 0h-3m-2-5a4 4 0 11-8 0 4 4 0 018 0zM3 20a6 6 0 0112 0v1H3v-1z" />
+    </svg></button> <!-- Visitor Modal -->
+   <div id="visitor-modal" class="modal-backdrop hidden">
+    <div class="modal-content">
+     <div class="p-6 border-b border-gray-100">
+      <div class="flex items-center justify-between">
+       <h2 class="text-xl font-bold text-gray-800">👤 Daftar Pelawat</h2><button id="close-visitor-modal" class="w-10 h-10 rounded-xl neu-button flex items-center justify-center" title="Tutup">
+        <svg class="w-5 h-5 text-gray-600" fill="none" stroke="currentColor" viewbox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+        </svg></button>
+      </div>
+     </div>
+     <div class="p-6 space-y-4">
+      <div class="p-3 rounded-lg bg-blue-50 border border-blue-200">
+       <p class="text-xs text-blue-700"><strong>💡 Petua:</strong> Isi sekurang-kurangnya satu butir maklumat untuk daftar pelawat</p>
+      </div>
+      <div><label class="block text-sm font-medium text-gray-600 mb-2">Nama Pelawat</label> <input type="text" id="visitor-name" class="neu-input uppercase" placeholder="MASUKKAN NAMA PELAWAT">
+      </div>
+      <div><label class="block text-sm font-medium text-gray-600 mb-2">Tujuan Lawatan</label> <input type="text" id="visitor-purpose" class="neu-input" placeholder="Cth: Mesyuarat, Penghantaran">
+      </div><button id="submit-visitor-btn" class="w-full py-4 rounded-xl neu-button-primary font-bold text-white flex items-center justify-center gap-2" disabled>
+       <svg class="w-5 h-5" fill="none" stroke="currentColor" viewbox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />
+       </svg> Daftar Pelawat </button>
+     </div>
+    </div>
+   </div><!-- Admin Modal -->
+   <div id="admin-modal" class="modal-backdrop hidden">
+    <div class="modal-content"><!-- Header -->
+     <div class="p-6 border-b border-gray-100">
+      <div class="flex items-center justify-between">
+       <h2 class="text-xl font-bold text-gray-800 flex items-center gap-2">
+        <svg class="w-6 h-6 text-blue-500" fill="none" stroke="currentColor" viewbox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" /> <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+        </svg> Mod Admin</h2><button id="close-admin-modal" class="w-10 h-10 rounded-xl neu-button flex items-center justify-center" title="Tutup">
+        <svg class="w-5 h-5 text-gray-600" fill="none" stroke="currentColor" viewbox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+        </svg></button>
+      </div>
+     </div><!-- Password Section -->
+     <div id="admin-password-section" class="p-6"><label class="block text-sm font-medium text-gray-600 mb-2">Kata Laluan Admin</label> <input type="password" id="admin-password" class="neu-input text-center text-2xl tracking-widest" placeholder="••••••"> <button id="admin-login-btn" class="w-full mt-4 py-3 rounded-xl neu-button-primary font-bold text-white">Masuk</button>
+      <p id="admin-error" class="hidden mt-2 text-center text-red-500 text-sm">Kata laluan salah</p>
+     </div><!-- Admin Content -->
+     <div id="admin-content" class="hidden"><!-- Tabs -->
+      <div class="px-6 py-3 border-b border-gray-100 flex gap-2 overflow-x-auto"><button class="admin-tab active" data-tab="config">☁️ Konfigurasi</button> <button class="admin-tab" data-tab="control">⚙️ Kawalan</button> <button class="admin-tab" data-tab="docs">📚 Dokumentasi</button>
+      </div><!-- Content -->
+      <div class="p-6 overflow-y-auto max-h-[calc(90vh-200px)]"><!-- Config Tab -->
+       <div id="tab-config" class="admin-tab-content space-y-4">
+        <div><label class="block text-sm font-medium text-gray-600 mb-2">Google Apps Script URL</label> <input type="url" id="gas-url" class="neu-input text-sm" placeholder="https://script.google.com/macros/s/...">
+         <p class="text-xs text-gray-400 mt-1">URL deployment untuk integrasi Google Sheet &amp; Drive</p>
+        </div>
+        <div><label class="block text-sm font-medium text-gray-600 mb-2">Google Client ID</label> <input type="text" id="google-client-id" class="neu-input text-sm" placeholder="xxxxx.apps.googleusercontent.com">
+         <p class="text-xs text-gray-400 mt-1">Untuk login Google</p>
+        </div><button id="save-config-btn" class="w-full py-3 rounded-xl neu-button-primary font-bold text-white">💾 Simpan Konfigurasi</button>
+       </div><!-- Control Tab -->
+       <div id="tab-control" class="admin-tab-content hidden space-y-6">
+        <div class="p-4 rounded-xl bg-gray-50 space-y-4">
+         <div>
+          <label class="block text-sm font-medium text-gray-600 mb-3">🔐 Geofencing (Keperluan Lokasi)</label>
+          <div class="flex items-center gap-4">
+           <div class="flex-1">
+            <p class="text-sm text-gray-700 font-medium mb-2">Status: <span id="geofence-status-text" class="text-green-600 font-bold">DIMATIKAN</span></p>
+            <p class="text-xs text-gray-500">DIMATIKAN: Benarkan daftar di mana-mana lokasi</p>
+            <p class="text-xs text-gray-500 mt-1">DIHIDUPKAN: Wajib dalam radius 200m</p>
+           </div>
+           <div class="flex items-center gap-2">
+            <button id="toggle-geofence" class="relative inline-flex h-10 w-16 items-center rounded-full transition-colors" style="background: #ccc;"> <span id="geofence-toggle-dot" class="inline-block h-8 w-8 transform rounded-full bg-white transition-transform" style="transform: translateX(1px);"></span> </button>
+           </div>
+          </div>
+         </div>
+         <div class="border-t border-gray-200 pt-4">
+          <label class="block text-sm font-medium text-gray-600 mb-2">📍 Koordinat Pusat Sekolah</label>
+          <div class="grid grid-cols-2 gap-3"><input type="number" step="any" id="school-lat" class="neu-input" placeholder="Latitude"> <input type="number" step="any" id="school-lng" class="neu-input" placeholder="Longitude">
+          </div><button id="get-current-location" class="mt-2 text-sm text-blue-600 font-medium">📍 Gunakan Lokasi Semasa</button>
+         </div>
+         <div class="p-3 rounded-lg bg-blue-50 border border-blue-200">
+          <p class="text-xs text-blue-700"><strong>💡 Info:</strong> Jika Geofencing DIHIDUPKAN, staf hanya boleh daftar masuk dalam radius 200 meter dari koordinat pusat sekolah.</p>
+         </div>
+        </div><button id="save-control-btn" class="w-full py-3 rounded-xl neu-button-primary font-bold text-white">💾 Simpan Tetapan</button>
+       </div><!-- Docs Tab -->
+       <div id="tab-docs" class="admin-tab-content hidden space-y-4 text-sm">
+        <div class="p-4 rounded-xl bg-blue-50 border border-blue-200">
+         <h3 class="font-bold text-blue-800 mb-2">📖 Panduan Pemasangan Lengkap</h3>
+         <p class="text-blue-700 text-xs">4 komponen penting untuk sistem lengkap</p>
+        </div><!-- Google Client ID -->
+        <div class="space-y-2">
+         <div class="flex items-center justify-between">
+          <h3 class="font-bold text-gray-800">1️⃣ Google Client ID (DELIMA)</h3><button class="text-blue-600 font-semibold text-xs hover:text-blue-800" onclick="copyCode('googleClientId')">📋 Salin</button>
+         </div>
+         <div class="code-block text-xs overflow-auto max-h-40">
+          // NEW: Google Identity Services (GIS) // 1. Google Cloud Console &gt; APIs &amp; Services &gt; Credentials // 2. Create OAuth Client ID (Web Application) // 3. Add Authorized Origin: your domain (e.g., https://your-app.com) // 4. Add Authorized Redirect URI: https://your-app.com // 5. Copy Client ID const GOOGLE_CLIENT_ID = "YOUR_CLIENT_ID.apps.googleusercontent.com";
+         </div>
+        </div><!-- manifest.json -->
+        <div class="space-y-2">
+         <div class="flex items-center justify-between">
+          <h3 class="font-bold text-gray-800">2️⃣ manifest.json (PWA)</h3><button class="text-blue-600 font-semibold text-xs hover:text-blue-800" onclick="copyCode('manifest')">📋 Salin</button>
+         </div>
+         <div class="code-block text-xs overflow-auto max-h-40">
+          { "name": "Sistem Kehadiran 3D Elite", "display": "standalone", "theme_color": "#10B981" }
+         </div>
+        </div><!-- Service Worker -->
+        <div class="space-y-2">
+         <div class="flex items-center justify-between">
+          <h3 class="font-bold text-gray-800">3️⃣ sw.js (Service Worker)</h3><button class="text-blue-600 font-semibold text-xs hover:text-blue-800" onclick="copyCode('sw')">📋 Salin</button>
+         </div>
+         <div class="code-block text-xs overflow-auto max-h-40">
+          // Offline support &amp; caching const CACHE_NAME = 'kehadiran-v1'; self.addEventListener('install', (e) =&gt; { e.waitUntil(caches.open(CACHE_NAME)); });
+         </div>
+        </div><!-- Apps Script -->
+        <div class="space-y-2">
+         <div class="flex items-center justify-between">
+          <h3 class="font-bold text-gray-800">4️⃣ Code.gs (Google Apps Script)</h3><button class="text-blue-600 font-semibold text-xs hover:text-blue-800" onclick="copyCode('appsScript')">📋 Salin</button>
+         </div>
+         <div class="code-block text-xs overflow-auto max-h-40">
+          // Google Apps Script untuk backend const SPREADSHEET_ID = 'YOUR_SPREADSHEET_ID'; const DRIVE_FOLDER_ID = 'YOUR_FOLDER_ID'; function doPost(e) { const data = JSON.parse(e.postData.contents); // Proses data... }
+         </div>
+        </div><!-- Setup Instructions -->
+        <div class="p-4 rounded-xl bg-green-50 border border-green-200 space-y-2">
+         <h3 class="font-bold text-green-800">✅ Langkah Setup</h3>
+         <ol class="text-green-700 text-xs space-y-1 list-decimal list-inside">
+          <li>Register Google Project &amp; dapatkan Client ID</li>
+          <li>Buat Google Sheet &amp; Drive folder</li>
+          <li>Deploy Code.gs di Google Apps Script</li>
+          <li>Tetapkan Google Client ID di Konfigurasi tab</li>
+          <li>Uji dengan "Daftar Masuk"</li>
+         </ol>
+        </div>
+       </div>
+      </div>
+     </div>
+    </div>
+   </div><!-- Toast Container -->
+   <div id="toast-container"></div>
+  </div>
+  <script>
+    // ==================== CODE STORAGE ====================
+    const codeStorage = {
+      googleClientId: `// NEW: Google Identity Services (GIS)
+// 1. Google Cloud Console > APIs & Services > Credentials
+// 2. Create OAuth Client ID (Web Application)
+// 3. Add Authorized Origin: your domain (e.g., https://your-app.com)
+// 4. Add Authorized Redirect URI: https://your-app.com
+// 5. Copy Client ID
 
-    function syncOfflineData() {
-        if (!navigator.onLine) return;
-        let offlineQueue = JSON.parse(localStorage.getItem('ehadir_offline_queue') || "[]");
-        if (offlineQueue.length === 0) return; 
+const GOOGLE_CLIENT_ID = "YOUR_CLIENT_ID.apps.googleusercontent.com";`,
 
-        showSyncBar("Menghantar " + offlineQueue.length + " data tertangguh...", "#3498db");
-        let itemToSync = offlineQueue[0];
-        if (!itemToSync.kategori || itemToSync.kategori === "undefined" || itemToSync.kategori === null) {
-            itemToSync.kategori = "PELAWAT";
+      manifest: `{
+  "name": "Sistem Kehadiran 3D Elite",
+  "short_name": "Kehadiran",
+  "description": "Sistem kehadiran digital PWA dengan GPS tracking",
+  "scope": "/",
+  "start_url": "/index.html",
+  "display": "standalone",
+  "orientation": "portrait-primary",
+  "background_color": "#F8F9FA",
+  "theme_color": "#10B981",
+  "icons": [
+    {
+      "src": "data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 192 192'><rect fill='%2310B981' width='192' height='192'/><text x='96' y='120' font-size='80' font-weight='bold' fill='white' text-anchor='middle'>K</text></svg>",
+      "sizes": "192x192",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    }
+  ],
+  "screenshots": [
+    {
+      "src": "data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 540 720'><rect fill='%23F8F9FA' width='540' height='720'/></svg>",
+      "sizes": "540x720",
+      "type": "image/svg+xml",
+      "form_factor": "narrow"
+    }
+  ],
+  "categories": ["productivity"],
+  "shortcuts": [
+    {
+      "name": "Daftar Masuk",
+      "short_name": "Masuk",
+      "description": "Daftar kehadiran masuk",
+      "url": "/index.html?action=checkin",
+      "icons": [
+        {
+          "src": "data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 96 96'><text x='48' y='60' font-size='60' text-anchor='middle'>📥</text></svg>",
+          "sizes": "96x96"
         }
+      ]
+    }
+  ],
+  "prefer_related_applications": false
+}`,
 
-        fetch(API_URL, { method: "POST", body: JSON.stringify(itemToSync) })
-        .then(response => response.json())
-        .then(res => {
-            if (res.result === "success") {
-                offlineQueue.shift(); 
-                localStorage.setItem('ehadir_offline_queue', JSON.stringify(offlineQueue));
-                if (offlineQueue.length > 0) { syncOfflineData(); } 
-                else { showSyncBar("👍 Semua data offline telah berjaya dihantar!", "#27ae60"); loadList(); }
-            } else { showSyncBar("Ralat Server: " + res.msg, "#c0392b"); }
+      sw: `const CACHE_NAME = 'kehadiran-v1';
+const ASSETS_TO_CACHE = [
+  '/',
+  '/index.html',
+  'https://cdn.tailwindcss.com/3.4.17',
+  'https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&display=swap'
+];
+
+// Install event - cache assets
+self.addEventListener('install', (event) => {
+  console.log('[ServiceWorker] Installing...');
+  event.waitUntil(
+    caches.open(CACHE_NAME).then((cache) => {
+      console.log('[ServiceWorker] Caching app shell');
+      return cache.addAll(ASSETS_TO_CACHE).catch(() => {
+        console.log('[ServiceWorker] Some assets could not be cached');
+      });
+    })
+  );
+  self.skipWaiting();
+});
+
+// Activate event - cleanup old caches
+self.addEventListener('activate', (event) => {
+  console.log('[ServiceWorker] Activating...');
+  event.waitUntil(
+    caches.keys().then((cacheNames) => {
+      return Promise.all(
+        cacheNames.map((cacheName) => {
+          if (cacheName !== CACHE_NAME) {
+            console.log('[ServiceWorker] Deleting old cache:', cacheName);
+            return caches.delete(cacheName);
+          }
         })
-        .catch(err => { showSyncBar("Ralat Network. Akan cuba sebentar lagi.", "#e67e22"); });
-    }
+      );
+    })
+  );
+  self.clients.claim();
+});
 
-    function showModernAlert(title, msg, type, callback) {
-        let modal = document.getElementById('customModal');
-        let mTitle = document.getElementById('modalTitle');
-        let mMsg = document.getElementById('modalMsg');
-        let mIcon = document.getElementById('modalIcon');
-        let mBtns = document.getElementById('modalBtnRow');
+// Fetch event - Network first, fallback to cache
+self.addEventListener('fetch', (event) => {
+  const { request } = event;
+  
+  // Skip cross-origin requests
+  if (!request.url.startsWith(self.location.origin) && !request.url.startsWith('https://fonts.googleapis.com') && !request.url.startsWith('https://cdn.tailwindcss.com')) {
+    return;
+  }
 
-        mTitle.innerText = title;
-        mMsg.innerHTML = msg; 
-        
-        if(type === 'error') {
-            mIcon.innerText = ""; mTitle.style.color = "#c0392b";
-            mBtns.innerHTML = `<button class="modal-btn btn-ok" onclick="closeCustomModal()">Faham</button>`;
-        } else if(type === 'success') {
-            mIcon.innerText = "👍"; mTitle.style.color = "#27ae60";
-            mBtns.innerHTML = `<button class="modal-btn btn-ok" onclick="closeCustomModal()">Terbaik</button>`;
-        } else if(type === 'info') {
-            mIcon.innerText = ""; mTitle.style.color = "#2980b9";
-            mBtns.innerHTML = `<button class="modal-btn btn-ok" onclick="closeCustomModal()">OK</button>`;
-        } else if(type === 'confirm') {
-            mIcon.innerText = ""; mTitle.style.color = "#1e3c72";
-            window.tempCallback = callback;
-            mBtns.innerHTML = `<button class="modal-btn btn-cancel-modal" onclick="closeCustomModal()">Batal</button><button class="modal-btn btn-ok" onclick="confirmAction()">Teruskan</button>`;
-        } else {
-            mIcon.innerText = ""; mTitle.style.color = "#2c3e50";
-            mBtns.innerHTML = `<button class="modal-btn btn-ok" onclick="closeCustomModal()">Tutup</button>`;
+  event.respondWith(
+    fetch(request)
+      .then((response) => {
+        // Cache successful responses
+        if (response.ok) {
+          const responseClone = response.clone();
+          caches.open(CACHE_NAME).then((cache) => {
+            cache.put(request, responseClone);
+          });
         }
-        modal.style.display = "flex";
+        return response;
+      })
+      .catch(() => {
+        // Return cached response when offline
+        return caches.match(request).then((response) => {
+          if (response) {
+            return response;
+          }
+          // Return offline page if available
+          if (request.destination === 'document') {
+            return new Response(
+              '<html><body><h1>Offline Mode</h1><p>Aplikasi berfungsi dalam mode offline</p></body></html>',
+              { headers: { 'Content-Type': 'text/html' } }
+            );
+          }
+          return new Response('Network request failed', { status: 408 });
+        });
+      })
+  );
+});
+
+// Background sync untuk data offline
+self.addEventListener('sync', (event) => {
+  if (event.tag === 'sync-attendance') {
+    event.waitUntil(syncAttendanceData());
+  }
+});
+
+async function syncAttendanceData() {
+  const db = await openIndexedDB();
+  const pendingRecords = await getPendingRecords(db);
+  
+  for (const record of pendingRecords) {
+    try {
+      await fetch('/api/attendance', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(record)
+      });
+      await markRecordSynced(db, record.id);
+    } catch (error) {
+      console.error('Sync failed for record:', record.id);
     }
+  }
+}`,
 
-    function closeCustomModal() { document.getElementById('customModal').style.display = "none"; }
-    function confirmAction() { closeCustomModal(); if(window.tempCallback) window.tempCallback(); }
+      appsScript: `// Google Apps Script untuk Sistem Kehadiran
+// LANGKAH: Copy semua kod di bawah ke Google Apps Script editor
+// Kemudian Deploy sebagai Web App
 
-    function sendNotification(title, body, tag) {
-        if(Notification.permission === "granted") {
-            if('serviceWorker' in navigator) {
-                navigator.serviceWorker.ready.then(reg => {
-                    reg.showNotification(title, {
-                        body: body,
-                        icon: "https://cdn-icons-png.flaticon.com/128/9402/9402342.png",
-                        tag: tag,
-                        renotify: true,
-                        vibrate: [200, 100, 200],
-                        data: { url: location.href } 
-                    });
-                });
-            } else {
-                new Notification(title, { body: body, tag: tag });
-            }
-        }
+// ===== KONFIGURASI =====
+const SPREADSHEET_ID = 'YOUR_SPREADSHEET_ID';
+const DRIVE_FOLDER_ID = 'YOUR_DRIVE_FOLDER_ID';
+const SHEET_NAMES = {
+  GURU: 'GURU',
+  AKP: 'AKP',
+  KEBERSIHAN: 'KEBERSIHAN',
+  PELAWAT: 'PELAWAT'
+};
+
+// ===== MAIN FUNCTIONS =====
+function doPost(e) {
+  try {
+    const data = JSON.parse(e.postData.contents);
+    const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
+    
+    switch(data.action) {
+      case 'addRecord':
+        return addAttendanceRecord(ss, data);
+      case 'updateCheckout':
+        return updateCheckoutTime(ss, data);
+      case 'uploadImage':
+        return uploadImageToDrive(data);
+      case 'getRecords':
+        return getRecords(ss, data);
+      default:
+        return createResponse(false, 'Unknown action');
     }
+  } catch(error) {
+    Logger.log('Error: ' + error);
+    return createResponse(false, 'Server error: ' + error);
+  }
+}
 
-    window.onload = function() {
-        startClock();
-        startRadar();
-        fetchConfig(); 
-        getHijriDate();
-        initLockName(); 
-        initAvatar(); 
-        initBackgroundService(); 
-        
-        if(!navigator.onLine) showSyncBar("MOD OFFLINE: Data akan disimpan dalam telefon.", "#e74c3c");
-        else syncOfflineData(); 
+function doGet(e) {
+  return ContentService
+    .createTextOutput(JSON.stringify({status: 'ok', version: '1.0'}))
+    .setMimeType(ContentService.MimeType.JSON);
+}
 
-        setTimeout(() => {
-            checkSession();
-            setInterval(updateDashboardInfo, 5000); 
-        }, 2000);
+// ===== ATTENDANCE FUNCTIONS =====
+function addAttendanceRecord(ss, data) {
+  try {
+    const kategori = data.kategori || 'UMUM';
+    let sheet = ss.getSheetByName(SHEET_NAMES[kategori]);
+    
+    // Cipta sheet jika belum wujud
+    if (!sheet) {
+      sheet = ss.insertSheet(SHEET_NAMES[kategori]);
+      sheet.appendRow(['Timestamp', 'Tarikh', 'Nama', 'Emel', 'Waktu Masuk', 'Waktu Keluar', 'Lokasi GPS', 'Device ID', 'Link Gambar', 'Tujuan', 'Status']);
+      sheet.setFrozenRows(1);
+    }
+    
+    // Tambah rekod
+    sheet.appendRow([
+      new Date().toISOString(),
+      data.tarikh || new Date().toLocaleDateString('ms-MY'),
+      data.nama || '-',
+      data.emel || '-',
+      data.waktuMasuk || '-',
+      data.waktuKeluar || '-',
+      data.lokasiGPS || '-',
+      data.deviceId || '-',
+      data.linkGambar || '-',
+      data.tujuan || '-',
+      data.statusSync || 'synced'
+    ]);
+    
+    Logger.log('Record added: ' + data.nama);
+    return createResponse(true, 'Record added successfully');
+  } catch(error) {
+    Logger.log('Add record error: ' + error);
+    return createResponse(false, error.toString());
+  }
+}
 
-        loadList();
-        setInterval(updateLiveTimers, 1000);
-        
-        const workerBlob = new Blob(["self.onmessage = function() { setInterval(function(){ self.postMessage('tick'); }, 1000); }"], { type: "text/javascript" });
-        const worker = new Worker(URL.createObjectURL(workerBlob));
-        worker.onmessage = function(e) { monitorAutoLogic(); };
-        worker.postMessage("start");
+function updateCheckoutTime(ss, data) {
+  try {
+    const sheet = ss.getSheetByName(SHEET_NAMES[data.kategori]);
+    if (!sheet) {
+      return createResponse(false, 'Sheet not found');
+    }
+    
+    const rows = sheet.getDataRange().getValues();
+    for (let i = 1; i < rows.length; i++) {
+      if (rows[i][7] === data.deviceId && rows[i][4] === data.waktuMasuk) {
+        sheet.getRange(i + 1, 6).setValue(data.waktuKeluar);
+        Logger.log('Checkout updated for device: ' + data.deviceId);
+        return createResponse(true, 'Checkout updated');
+      }
+    }
+    
+    return createResponse(false, 'Record not found');
+  } catch(error) {
+    return createResponse(false, error.toString());
+  }
+}
+
+function uploadImageToDrive(data) {
+  try {
+    const folder = DriveApp.getFolderById(DRIVE_FOLDER_ID);
+    
+    // Buat subfolder untuk hari ini
+    const today = new Date().toLocaleDateString('ms-MY');
+    let todayFolder = null;
+    
+    const folders = folder.getFolders();
+    while (folders.hasNext()) {
+      const f = folders.next();
+      if (f.getName() === today) {
+        todayFolder = f;
+        break;
+      }
+    }
+    
+    if (!todayFolder) {
+      todayFolder = folder.createFolder(today);
+    }
+    
+    // Buat file dari base64
+    const imageBlob = Utilities.newBlob(
+      Utilities.base64Decode(data.imageBase64),
+      'image/jpeg',
+      data.nama + '_' + new Date().getTime() + '.jpg'
+    );
+    
+    const file = todayFolder.createFile(imageBlob);
+    const fileUrl = file.getUrl();
+    
+    Logger.log('Image uploaded: ' + fileUrl);
+    return createResponse(true, 'Image uploaded', {url: fileUrl});
+  } catch(error) {
+    return createResponse(false, error.toString());
+  }
+}
+
+function getRecords(ss, data) {
+  try {
+    const sheet = ss.getSheetByName(SHEET_NAMES[data.kategori || 'GURU']);
+    if (!sheet) {
+      return createResponse(false, 'Sheet not found');
+    }
+    
+    const records = sheet.getDataRange().getValues();
+    return createResponse(true, 'Records retrieved', {records: records, count: records.length});
+  } catch(error) {
+    return createResponse(false, error.toString());
+  }
+}
+
+// ===== UTILITY FUNCTIONS =====
+function createResponse(success, message, data = {}) {
+  const response = {
+    success: success,
+    message: message,
+    timestamp: new Date().toISOString(),
+    ...data
+  };
+  
+  return ContentService
+    .createTextOutput(JSON.stringify(response))
+    .setMimeType(ContentService.MimeType.JSON);
+}
+
+function createImageFolder() {
+  const mainFolder = DriveApp.getFolderById(DRIVE_FOLDER_ID);
+  
+  try {
+    mainFolder.createFolder('GAMBAR');
+  } catch(e) {
+    Logger.log('Folder already exists or error: ' + e);
+  }
+}
+
+// ===== SETUP FUNCTION (Jalankan sekali) =====
+function setup() {
+  const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
+  
+  // Cipta semua sheets
+  Object.values(SHEET_NAMES).forEach(name => {
+    let sheet = ss.getSheetByName(name);
+    if (!sheet) {
+      sheet = ss.insertSheet(name);
+      sheet.appendRow(['Timestamp', 'Tarikh', 'Nama', 'Emel', 'Waktu Masuk', 'Waktu Keluar', 'Lokasi GPS', 'Device ID', 'Link Gambar', 'Tujuan', 'Status']);
+      sheet.setFrozenRows(1);
+    }
+  });
+  
+  // Cipta folder gambar
+  createImageFolder();
+  
+  Logger.log('Setup complete!');
+}`
     };
 
-    // --- AVATAR LOGIC (10 OFFICE THEMED) ---
-    const AVATARS = [
-        "https://cdn-icons-png.flaticon.com/128/4140/4140048.png", 
-        "https://cdn-icons-png.flaticon.com/128/4140/4140047.png", 
-        "https://cdn-icons-png.flaticon.com/128/4140/4140037.png", 
-        "https://cdn-icons-png.flaticon.com/128/4140/4140051.png", 
-        "https://cdn-icons-png.flaticon.com/128/4140/4140040.png", 
-        "https://cdn-icons-png.flaticon.com/128/4140/4140061.png", 
-        "https://cdn-icons-png.flaticon.com/128/4140/4140052.png", 
-        "https://cdn-icons-png.flaticon.com/128/4140/4140042.png", 
-        "https://cdn-icons-png.flaticon.com/128/4140/4140046.png", 
-        "https://cdn-icons-png.flaticon.com/128/4140/4140057.png"  
-    ];
-
-    function initAvatar() {
-        let saved = localStorage.getItem('ehadir_user_avatar');
-        if(saved) document.getElementById('currentAvatarMini').src = saved;
-        let grid = document.getElementById('avatarGrid');
-        grid.innerHTML = "";
-        AVATARS.forEach(url => {
-            let div = document.createElement('div');
-            div.className = "avatar-option";
-            if(url === saved) div.classList.add('selected');
-            div.innerHTML = `<img src="${url}">`;
-            div.onclick = () => selectAvatar(url);
-            grid.appendChild(div);
-        });
+    function copyCode(key) {
+      const text = codeStorage[key];
+      if (!text) return;
+      
+      if (navigator.clipboard) {
+        navigator.clipboard.writeText(text)
+          .then(() => showToast('✅ Kod disalin!', 'success'))
+          .catch(() => fallbackCopy(text));
+      } else {
+        fallbackCopy(text);
+      }
     }
 
-    function openAvatarModal() { document.getElementById('avatarModalContainer').style.display = 'flex'; }
-    function closeAvatarModal() { document.getElementById('avatarModalContainer').style.display = 'none'; }
-
-    function selectAvatar(url) {
-        localStorage.setItem('ehadir_user_avatar', url);
-        document.getElementById('currentAvatarMini').src = url;
-        initAvatar(); 
-        closeAvatarModal();
+    function fallbackCopy(text) {
+      const area = document.createElement('textarea');
+      area.value = text;
+      area.style.position = 'fixed';
+      area.style.left = '-9999px';
+      document.body.appendChild(area);
+      area.select();
+      try {
+        document.execCommand('copy');
+        showToast('✅ Kod disalin!', 'success');
+      } catch {
+        showToast('❌ Gagal menyalin', 'error');
+      }
+      document.body.removeChild(area);
     }
 
-    function initLockName() {
-        let locked = localStorage.getItem('ehadir_locked_name');
-        let lockedKat = localStorage.getItem('ehadir_locked_kat'); 
-        let input = document.getElementById('nama');
-        let sel = document.getElementById('kategori');
-        let btnImg = document.getElementById('lockIconImg');
-        let btnLock = document.getElementById('lockBtn');
-        let avatarBtn = document.getElementById('avatarBtn'); 
-        let btnPelawatLocked = document.getElementById('btnPelawatLocked'); // ELEMENT BARU
+    // ==================== DEFAULTS ====================
+    const ADMIN_PASSWORD = '101010';
+    const defaultConfig = {
+      app_title: 'Sistem Kehadiran 3D Elite',
+      school_name: 'SK SELAMA (K)'
+    };
+
+    // ==================== STATE ====================
+    let settings = {
+      gasUrl: '',
+      googleClientId: '',
+      schoolLat: 0,
+      schoolLng: 0,
+      deviceId: '',
+      geofencingEnabled: false
+    };
+    let currentUser = null;
+    let currentCategory = '';
+    let currentGPS = null;
+    let isOnline = navigator.onLine;
+    let isWithinGeofence = false;
+    let todayRecords = [];
+    let currentFilter = 'all';
+    let tokenClient;
+
+    // ==================== UTILITIES ====================
+    function generateId() {
+      return Date.now().toString(36) + Math.random().toString(36).substr(2);
+    }
+
+    function generateDeviceId() {
+      const nav = navigator;
+      const screen = window.screen;
+      const data = [nav.userAgent, nav.language, screen.width, screen.height].join('|');
+      let hash = 0;
+      for (let i = 0; i < data.length; i++) {
+        const char = data.charCodeAt(i);
+        hash = ((hash << 5) - hash) + char;
+        hash = hash & hash;
+      }
+      return 'DEV' + Math.abs(hash).toString(36).toUpperCase();
+    }
+
+    function formatDate(date) {
+      return date.toLocaleDateString('ms-MY', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
+    }
+
+    function formatTime(date) {
+      return date.toLocaleTimeString('ms-MY', { hour: 'numeric', minute: '2-digit', second: '2-digit', hour12: true });
+    }
+
+    function getTodayDateString() {
+      return new Date().toISOString().split('T')[0];
+    }
+
+    function showToast(message, type = 'info') {
+      const container = document.getElementById('toast-container');
+      const toast = document.createElement('div');
+      toast.className = 'toast';
+      toast.textContent = message;
+      container.appendChild(toast);
+      setTimeout(() => toast.remove(), 3000);
+    }
+
+    function calculateDistance(lat1, lon1, lat2, lon2) {
+      const R = 6371e3;
+      const φ1 = lat1 * Math.PI / 180;
+      const φ2 = lat2 * Math.PI / 180;
+      const Δφ = (lat2 - lat1) * Math.PI / 180;
+      const Δλ = (lon2 - lon1) * Math.PI / 180;
+      const a = Math.sin(Δφ/2) * Math.sin(Δφ/2) + Math.cos(φ1) * Math.cos(φ2) * Math.sin(Δλ/2) * Math.sin(Δλ/2);
+      const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+      return R * c;
+    }
+
+    // ==================== STORAGE ====================
+    function saveSettings() {
+      localStorage.setItem('attendance_settings', JSON.stringify(settings));
+    }
+
+    function loadSettings() {
+      const saved = localStorage.getItem('attendance_settings');
+      if (saved) settings = { ...settings, ...JSON.parse(saved) };
+      if (!settings.deviceId) {
+        settings.deviceId = generateDeviceId();
+        saveSettings();
+      }
+    }
+
+    function saveCurrentUser() {
+      if (currentUser) localStorage.setItem('current_user', JSON.stringify(currentUser));
+    }
+
+    function loadCurrentUser() {
+      const saved = localStorage.getItem('current_user');
+      if (saved) currentUser = JSON.parse(saved);
+    }
+
+    // ==================== GPS ====================
+    function initGPS() {
+      if ('geolocation' in navigator) {
+        navigator.geolocation.watchPosition(
+          (position) => {
+            currentGPS = {
+              lat: position.coords.latitude,
+              lng: position.coords.longitude,
+              accuracy: position.coords.accuracy
+            };
+            updateGPSStatus();
+          },
+          (error) => {
+            console.error('GPS Error:', error);
+            document.getElementById('gps-led').className = 'led-3d led-red';
+            document.getElementById('gps-status-text').textContent = 'GPS Tidak Tersedia';
+          },
+          { enableHighAccuracy: true, maximumAge: 10000, timeout: 15000 }
+        );
+      }
+    }
+
+    function updateGPSStatus() {
+      const led = document.getElementById('gps-led');
+      const text = document.getElementById('gps-status-text');
+      const coords = document.getElementById('gps-coords');
+
+      if (!currentGPS) {
+        led.className = 'led-3d led-gray';
+        text.textContent = 'Menunggu GPS...';
+        return;
+      }
+
+      coords.textContent = `${currentGPS.lat.toFixed(6)}, ${currentGPS.lng.toFixed(6)} (±${Math.round(currentGPS.accuracy)}m)`;
+
+      if (settings.schoolLat && settings.schoolLng) {
+        const distance = calculateDistance(currentGPS.lat, currentGPS.lng, settings.schoolLat, settings.schoolLng);
+        isWithinGeofence = distance <= 100;
         
-        if (!locked || !lockedKat) {
-            if(locked || lockedKat) {
-                localStorage.removeItem('ehadir_locked_name');
-                localStorage.removeItem('ehadir_locked_kat');
-            }ধনLocked = null; 
-            lockedKat = null;
-        }
-
-        if (locked && lockedKat) {
-            input.value = locked;
-            sel.value = lockedKat;
-            input.readOnly = true;
-            sel.disabled = true; 
-            avatarBtn.disabled = true; 
-            input.style.background = "#fff8e1"; // Kuning apabila dikunci
-            sel.style.background = "#fff8e1";
-            
-            // ICON KUNCI: LOCKED (Solid/Round)
-            btnImg.src = "https://cdn-icons-png.flaticon.com/128/3064/3064155.png"; 
-            btnImg.style.filter = "opacity(1)";
-            btnLock.classList.add('btn-yellow');
-            
-            // LOGIK BARU: Tunjuk butang pelawat bila locked
-            if(btnPelawatLocked) btnPelawatLocked.style.display = 'flex';
+        if (isWithinGeofence) {
+          led.className = 'led-3d led-green';
+          text.textContent = `Dalam Zon (${Math.round(distance)}m)`;
         } else {
-            input.readOnly = false;
-            sel.disabled = false;
-            avatarBtn.disabled = false; 
-            input.style.background = "#f8f9fa"; // Warna asal
-            sel.style.background = "#f8f9fa";
-            
-            // ICON KUNCI: UNLOCKED (Line/Round)
-            btnImg.src = "https://cdn-icons-png.flaticon.com/128/3064/3064197.png"; 
-            btnImg.style.filter = "opacity(0.6)";
-            btnLock.classList.remove('btn-yellow');
-
-            // LOGIK BARU: Sembunyi butang pelawat bila unlocked
-            if(btnPelawatLocked) btnPelawatLocked.style.display = 'none';
+          led.className = 'led-3d led-red';
+          text.textContent = `Luar Zon (${Math.round(distance)}m)`;
         }
+      } else {
+        led.className = 'led-3d led-blue';
+        text.textContent = 'Koordinat belum ditetapkan';
+      }
+
+      updateActionButtons();
     }
 
-    function toggleLockName() {
-        let input = document.getElementById('nama');
-        let sel = document.getElementById('kategori');
-        let avatarBtn = document.getElementById('avatarBtn');
-        let current = input.value.trim().toUpperCase();
-        let currentKat = sel.value;
-        let currentAvatar = localStorage.getItem('ehadir_user_avatar');
-        
-        // Jika sedang terkunci, buka kunci
-        if (input.readOnly) {
-            input.readOnly = false;
-            sel.disabled = false;
-            avatarBtn.disabled = false;
-            input.style.background = "#f8f9fa";
-            sel.style.background = "#f8f9fa";
-            localStorage.removeItem('ehadir_locked_name');
-            localStorage.removeItem('ehadir_locked_kat');
-            showModernAlert("Nyah-Kunci", "Auto Check-In Dibatalkan.", "info");
-            initLockName();
+    // ==================== ONLINE STATUS ====================
+    function updateOnlineStatus() {
+      const led = document.getElementById('online-led');
+      isOnline = navigator.onLine;
+      led.className = isOnline ? 'led-3d led-green' : 'led-3d led-red';
+    }
+
+    // ==================== DATA HANDLER ====================
+    const dataHandler = {
+      onDataChanged(data) {
+        const today = getTodayDateString();
+        todayRecords = data.filter(r => r.tarikh === today);
+        renderRecords();
+        document.getElementById('record-count').textContent = todayRecords.length;
+      }
+    };
+
+    // ==================== RENDER ====================
+    function renderRecords() {
+      const list = document.getElementById('records-list');
+      let filtered = todayRecords;
+      
+      if (currentFilter !== 'all') {
+        filtered = todayRecords.filter(r => r.kategori === currentFilter || (currentFilter === 'PELAWAT' && r.isPelawat));
+      }
+
+      if (filtered.length === 0) {
+        list.innerHTML = '<p class="text-center text-gray-400 py-8">Tiada rekod untuk hari ini</p>';
+        return;
+      }
+
+      list.innerHTML = filtered.map(r => `
+        <div class="record-card">
+          <div class="flex items-start justify-between gap-3">
+            <div class="flex-1">
+              <div class="flex items-center gap-2 mb-1">
+                <span class="px-2 py-0.5 rounded-full text-xs font-bold ${
+                  r.kategori === 'GURU' ? 'bg-blue-100 text-blue-700' :
+                  r.kategori === 'AKP' ? 'bg-purple-100 text-purple-700' :
+                  r.kategori === 'KEBERSIHAN' ? 'bg-orange-100 text-orange-700' :
+                  'bg-pink-100 text-pink-700'
+                }">${r.kategori}</span>
+              </div>
+              <p class="font-bold text-gray-800">${r.nama}</p>
+              ${r.emel ? `<p class="text-xs text-gray-500">${r.emel}</p>` : ''}
+              ${r.tujuan ? `<p class="text-xs text-gray-500 italic">"${r.tujuan}"</p>` : ''}
+              <div class="flex items-center gap-3 mt-2 text-sm">
+                <span class="text-green-600 font-medium">⏰ ${r.waktuMasuk || '-'}</span>
+                ${r.waktuKeluar ? `<span class="text-red-500 font-medium">🚪 ${r.waktuKeluar}</span>` : '<span class="text-gray-400">Belum keluar</span>'}
+              </div>
+            </div>
+          </div>
+        </div>
+      `).join('');
+    }
+
+    // ==================== CATEGORY ====================
+    function handleCategoryChange() {
+      currentCategory = document.getElementById('category-select').value;
+      const guruSection = document.getElementById('guru-section');
+      const manualSection = document.getElementById('manual-section');
+      
+      guruSection.classList.add('hidden');
+      manualSection.classList.add('hidden');
+      
+      if (currentCategory === 'GURU') guruSection.classList.remove('hidden');
+      else if (currentCategory === 'AKP' || currentCategory === 'KEBERSIHAN') manualSection.classList.remove('hidden');
+      
+      updateActionButtons();
+    }
+
+    function updateActionButtons() {
+      const checkinBtn = document.getElementById('checkin-btn');
+      const checkoutBtn = document.getElementById('checkout-btn');
+      
+      let canCheckin = false;
+      let canCheckout = false;
+
+      if (currentCategory === 'GURU') {
+        canCheckin = currentUser && currentUser.email;
+        canCheckout = currentUser && hasActiveCheckin();
+      } else if (currentCategory === 'AKP' || currentCategory === 'KEBERSIHAN') {
+        const name = document.getElementById('staff-name').value.trim();
+        canCheckin = name.length >= 3;
+        canCheckout = name.length >= 3 && hasActiveCheckin();
+      }
+
+      checkinBtn.disabled = !canCheckin;
+      checkoutBtn.disabled = !canCheckout;
+    }
+
+    function hasActiveCheckin() {
+      const today = getTodayDateString();
+      let identifier = currentCategory === 'GURU' ? currentUser?.email : document.getElementById('staff-name').value.trim().toUpperCase();
+      
+      return todayRecords.some(r => 
+        r.tarikh === today && 
+        ((r.emel && r.emel === identifier) || r.nama === identifier) && 
+        r.waktuMasuk && 
+        !r.waktuKeluar
+      );
+    }
+
+    // ==================== CHECK IN/OUT ====================
+    async function handleCheckin() {
+      const btn = document.getElementById('checkin-btn');
+      btn.disabled = true;
+      btn.innerHTML = '<div class="spinner"></div>';
+
+      try {
+        // CHECK GEOFENCING - HANYA JIKA DIHIDUPKAN
+        if (settings.geofencingEnabled) {
+          if (!currentGPS) {
+            showToast('❌ GPS tidak tersedia. Hidup GPS dan cuba lagi', 'error');
+            btn.disabled = false;
+            btn.innerHTML = '<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 16l-4-4m0 0l4-4m-4 4h14m-5 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h7a3 3 0 013 3v1"/></svg> MASUK';
             return;
+          }
+
+          if (!settings.schoolLat || !settings.schoolLng) {
+            showToast('❌ Koordinat sekolah belum ditetapkan di Admin', 'error');
+            btn.disabled = false;
+            btn.innerHTML = '<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 16l-4-4m0 0l4-4m-4 4h14m-5 4v1a3 3 0 01-3 3H6a3 3 0 013-3V7a3 3 0 013-3h7a3 3 0 013 3v1"/></svg> MASUK';
+            return;
+          }
+
+          const distance = calculateDistance(currentGPS.lat, currentGPS.lng, settings.schoolLat, settings.schoolLng);
+          if (distance > 200) {
+            showToast(`❌ Anda di luar kawasan. Jarak: ${Math.round(distance)}m (Perlu dalam 200m)`, 'error');
+            btn.disabled = false;
+            btn.innerHTML = '<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 16l-4-4m0 0l4-4m-4 4h14m-5 4v1a3 3 0 01-3 3H6a3 3 0 013-3V7a3 3 0 013-3h7a3 3 0 013 3v1"/></svg> MASUK';
+            return;
+          }
         }
 
-        // Validasi sebelum kunci
-        if(!current) { showModernAlert("Tiada Nama", "Sila isi Nama anda dahulu.", "error"); return; }
-        if(!currentKat) { showModernAlert("Tiada Kategori", "Sila pilih Kategori dahulu.", "error"); return; }
-        if(!currentAvatar) { showModernAlert("Tiada Avatar", "Sila pilih Avatar anda dahulu.", "error"); return; }
-
-        // Kunci Data
-        input.readOnly = true;
-        sel.disabled = true;
-        avatarBtn.disabled = true;
-        input.style.background = "#fff8e1";
-        sel.style.background = "#fff8e1";
-        localStorage.setItem('ehadir_locked_name', current);
-        localStorage.setItem('ehadir_locked_kat', currentKat);
-        
-        showModernAlert("Berjaya Kunci", "Nama, Kategori & Avatar dikunci. <br>Sistem Auto Check-In sedia.", "success");
-        initLockName();
-    }
-
-    function cleanTimeDisplay(val) {
-        if (!val) return "--:--";
-        let d = parseTime(val, new Date());
-        return d ? d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true }) : val;
-    }
-
-    function updateScheduleInfo() {
-        let kat = document.getElementById('kategori').value;
-        let infoBox = document.getElementById('scheduleInfo');
-        if (!jamConfig) return;
-        if (kat && jamConfig[kat]) {
-            let masuk = cleanTimeDisplay(jamConfig[kat].masuk);
-            let keluar = cleanTimeDisplay(jamConfig[kat].keluar);
-            // UPDATE ICON MENGIKUT PERMINTAAN (NEW 3D CLOCKS) + ANIMATION
-            infoBox.innerHTML = `<div class="schedule-minimal"><div class="time-pill" style="color:#27ae60; border-color:#d4edda;"><span><img src="https://cdn-icons-png.flaticon.com/128/3233/3233497.png" class="icon-3d-mini"> ${masuk}</span></div><div class="time-pill" style="color:#c0392b; border-color:#fadbd8;"><span><img src="https://cdn-icons-png.flaticon.com/128/3233/3233513.png" class="icon-3d-mini"> ${keluar}</span></div></div>`;
-            infoBox.style.display = "block";
-            
-            // Trigger Re-Animation
-            infoBox.classList.remove('pop-in');
-            void infoBox.offsetWidth; // Force Reflow
-            infoBox.classList.add('pop-in');
-        }
-    }
-
-    function updateDashboardInfo() {
-        let s = JSON.parse(localStorage.getItem('ehadir_session'));
-        let dashboardSchedule = document.getElementById('dashboardSchedule');
-        let userExitTime = document.getElementById('userExitTime');
-        if (s && jamConfig && jamConfig[s.kategori]) {
-            let displayKeluar = cleanTimeDisplay(jamConfig[s.kategori].keluar);
-            dashboardSchedule.style.display = "block";
-            userExitTime.innerText = displayKeluar;
-        }
-    }
-
-    function parseTime(t, r) {
-        if (!t || t.toString().toUpperCase() === "BEBAS") return null;
-        let d = new Date(r); let tStr = t.toString().trim();
-        let p = tStr.match(/(\d+)[:.](\d+)(?:[:.](\d+))?\s*(AM|PM)/i);
-        if(p) {
-            let h = parseInt(p[1]), m = parseInt(p[2]), ampm = p[4].toUpperCase();
-            if(ampm === "PM" && h < 12) h += 12; if(ampm === "AM" && h === 12) h = 0;
-            d.setHours(h, m, 0, 0); return d;
-        } 
-        let p2 = tStr.match(/(\d+)[:.](\d+)/);
-        if(p2) { d.setHours(parseInt(p2[1]), parseInt(p2[2]), 0, 0); return d; }
-        return null; 
-    }
-
-    function parseTimeLocal(timeStr) {
-        if (!timeStr) return null;
-        if (timeStr.toString().length > 15) { let tempD = new Date(timeStr); if(!isNaN(tempD.getTime())) { let now = new Date(); now.setHours(tempD.getHours(), tempD.getMinutes(), tempD.getSeconds(), 0); return now; } }
-        let parts = timeStr.match(/(\d+):(\d+)(?::(\d+))?\s*(AM|PM|am|pm)?/i);
-        if (!parts) return null;
-        let h = parseInt(parts[1]), m = parseInt(parts[2]), s = parts[3] ? parseInt(parts[3]) : 0, ampm = parts[4] ? parts[4].toUpperCase() : null;
-        if (ampm === "PM" && h < 12) h += 12; if (ampm === "AM" && h === 12) h = 0;
-        let d = new Date(); d.setHours(h, m, s, 0); return d;
-    }
-
-    function updateLiveTimers() {
-        let now = new Date();
-        document.querySelectorAll('.live-timer').forEach(el => {
-            let masukStr = el.getAttribute('data-masuk');
-            if (!masukStr || masukStr === "undefined") { el.innerHTML = `<img src="https://cdn-icons-png.flaticon.com/128/2972/2972531.png" style="width:12px;height:12px;vertical-align:middle"> --`; return; }
-            let masukDate = parseTimeLocal(masukStr);
-            if (masukDate) {
-                let diff = Math.floor((now - masukDate) / 1000); if (diff < 0) diff = 0;
-                let h = Math.floor(diff / 3600); let m = Math.floor((diff % 3600) / 60);
-                el.innerHTML = `<img src="https://cdn-icons-png.flaticon.com/128/2972/2972531.png" style="width:12px;height:12px;vertical-align:middle"> ${h}H ${m}M`;
-            } else { el.innerHTML = `<img src="https://cdn-icons-png.flaticon.com/128/2972/2972531.png" style="width:12px;height:12px;vertical-align:middle"> 0H 0M`; }
-        });
-    }
-
-    function startClock(){
-        setInterval(()=>{
-            let n = new Date();
-            document.getElementById('clockDisplay').innerText = n.toLocaleTimeString('en-US', { hour12: true, hour: "2-digit", minute: "2-digit", timeZone: 'Asia/Kuala_Lumpur' });
-            document.getElementById('dateDisplay').innerText = n.toLocaleDateString('ms-MY', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'Asia/Kuala_Lumpur' });
-        }, 1000);
-    }
-    
-    function getHijriDate(){
-        const monthNames = ["Muharram", "Safar", "Rabiulawal", "Rabiulakhir", "Jamadilawal", "Jamadilakhir", "Rejab", "Syaaban", "Ramadan", "Syawal", "Zulkaedah", "Zulhijjah"];
-        let t = new Date();
-        try {
-            let parts = new Intl.DateTimeFormat('en-u-ca-islamic-umalqura-nu-latn', { day: 'numeric', month: 'numeric', year: 'numeric', timeZone: 'Asia/Kuala_Lumpur' }).formatToParts(t);
-            let hDay = parts.find(p => p.type === 'day').value;
-            let hMonthIndex = parseInt(parts.find(p => p.type === 'month').value) - 1; 
-            let hYear = parts.find(p => p.type === 'year').value.split(" ")[0];
-            document.getElementById('hijriDisplay').innerText = `${hDay} ${monthNames[hMonthIndex]||("")} ${hYear}`;
-        } catch(e) { document.getElementById('hijriDisplay').innerText = "Kalendar Islam"; }
-    }
-
-    function checkSession() { 
-        let s = JSON.parse(localStorage.getItem('ehadir_session')); 
-        if(s && s.date === new Date().toISOString().slice(0,10)) { 
-            document.getElementById('defaultForm').style.display = 'none'; 
-            document.getElementById('dashboardPanel').style.display = 'block'; 
-            document.getElementById('sessionName').innerText = s.nama; 
-            document.getElementById('dynamicStatus').innerText = "STATUS: " + s.kategori + " (SEDANG BERTUGAS)";
-            // FIX: GUNA AVATAR DALAM SESSION JIKA ADA
-            let savedAvatar = s.avatar || localStorage.getItem('ehadir_user_avatar');
-            if(savedAvatar) document.getElementById('userAvatarDash').src = savedAvatar;
-            updateDashboardInfo(); 
-        }
-    }
-    
-    function loadList() { 
-        let offlineQueue = JSON.parse(localStorage.getItem('ehadir_offline_queue') || "[]");
-        let offlineItems = offlineQueue.filter(q => q.action === "MASUK").map(q => ({
-            nama: q.nama, kategori: q.kategori, jam: new Date(q.clientTime).toLocaleTimeString('en-US', {hour12:true, hour:'2-digit', minute:'2-digit', second:'2-digit'}), avatar: q.avatar, isOffline: true
-        }));
-        if(!navigator.onLine) { renderList(offlineItems); return; }
-        fetch(API_URL, { method: "POST", body: JSON.stringify({action: "GET_LIST", passcode: PASSCODE}) })
-        .then(r => r.json()).then(res => { 
-            let serverItems = res.data || res; 
-            currentList = [...offlineItems, ...serverItems];
-            renderList(currentList);
-            checkAutoStatus(currentList);
-        }).catch(() => { renderList(offlineItems); });
-    }
-
-    function renderList(items) {
-        document.getElementById('count').innerText = items.length; 
-        let h = ""; 
-        
-        // MAPPING WARNA KATEGORI
-        const catColors = {
-            "GURU": "#2980b9",      // Biru
-            "AKP": "#d35400",       // Oren Gelap
-            "KEBERSIHAN": "#27ae60", // Hijau
-            "PELAWAT": "#8e44ad"    // Ungu
+        const now = new Date();
+        const record = {
+          id: generateId(),
+          nama: currentCategory === 'GURU' ? currentUser.name : document.getElementById('staff-name').value.trim().toUpperCase(),
+          emel: currentCategory === 'GURU' ? currentUser.email : '',
+          kategori: currentCategory,
+          waktuMasuk: formatTime(now),
+          waktuKeluar: '',
+          lokasiGPS: currentGPS ? `${currentGPS.lat.toFixed(6)}, ${currentGPS.lng.toFixed(6)}` : 'Tidak tersedia',
+          linkGambar: '',
+          deviceId: settings.deviceId,
+          statusSync: isOnline ? 'synced' : 'pending',
+          isPelawat: false,
+          tarikh: getTodayDateString(),
+          timestamp: now.toISOString()
         };
 
-        items.forEach((i, idx) => { 
-            let imgBtn = (i.kategori === "PELAWAT" && i.foto) ? `<span class="icon-btn" onclick="viewImage(${idx})"><img src="https://cdn-icons-png.flaticon.com/128/3342/3342137.png" class="icon-3d-mini"></span>` : "";
-            let xBtn = `<span class="icon-btn" style="border-color:#fadbd8;" onclick="keluarManual('${i.nama}')"><img src="https://cdn-icons-png.flaticon.com/128/6861/6861362.png" class="icon-3d-mini"></span>`;
-            let offlineClass = i.isOffline ? "offline-item" : "";
-            let offlineIcon = i.isOffline ? `<img src="https://cdn-icons-png.flaticon.com/128/159/159604.png" class="icon-3d-mini" title="Menunggu Sync"> ` : "";
-            
-            // Warna teks nama ikut kategori
-            let nameColor = catColors[i.kategori] || "#2c3e50";
+        const result = await window.dataSdk.create(record);
+        if (result.isOk) {
+          showToast('✅ Daftar masuk berjaya!', 'success');
+        } else {
+          showToast('❌ Gagal menyimpan rekod', 'error');
+        }
+      } catch (error) {
+        console.error('Checkin error:', error);
+        showToast('❌ Ralat semasa daftar masuk', 'error');
+      }
 
-            h += `<div class="user-card ${offlineClass}">
-                    <div style="display:flex; align-items:center; width:100%;">
-                        
-                        <div class="user-info">
-                            <strong style="color:${nameColor}">${offlineIcon}${i.nama}</strong>
-                            <div class="user-details"><span>${i.kategori}</span><span class="live-timer" data-masuk="${i.jam||("undefined")}"><img src="https://cdn-icons-png.flaticon.com/128/2972/2972531.png" style="width:12px;height:12px;vertical-align:middle"> 0H 0M</span></div>
-                        </div>
-                    </div>
-                    <div class="list-actions">${imgBtn}${xBtn}</div>
-                  </div>`; 
-        }); 
-        document.getElementById('listContainer').innerHTML = h || "<div style='padding:20px; color:#999; font-size:12px;'>Tiada rekod hari ini.</div>"; 
-        updateLiveTimers();
+      btn.disabled = false;
+      btn.innerHTML = '<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 16l-4-4m0 0l4-4m-4 4h14m-5 4v1a3 3 0 01-3 3H6a3 3 0 013-3V7a3 3 0 013-3h7a3 3 0 013 3v1"/></svg> MASUK';
+      updateActionButtons();
     }
 
-    function viewImage(index) { let data = currentList[index]; if(data && data.foto) { document.getElementById('imgFull').src = data.foto; document.getElementById('imageModal').style.display = "flex"; } }
-    function closeModal() { document.getElementById('imageModal').style.display = "none"; }
-    function processImage(i){if(i.files&&i.files[0]){let r=new FileReader();r.onload=function(e){let im=new Image();im.src=e.target.result;im.onload=function(){let cv=document.createElement("canvas");let ctx=cv.getContext("2d");cv.width=400;cv.height=400*(im.height/im.width);ctx.drawImage(im,0,0,cv.width,cv.height);let d=cv.toDataURL("image/jpeg",0.7);document.getElementById('previewImg').src=d;document.getElementById('previewImg').style.display='block';document.getElementById('base64Foto').value=d;};};r.readAsDataURL(i.files[0]);}}
-    function checkKategori(){ if(document.getElementById('kategori').value==='PELAWAT') showPelawatForm(); }
-    function showPelawatForm(){ document.getElementById('defaultForm').style.display='none'; document.getElementById('pelawatPanel').style.display='block'; }
-    function cancelPelawat(){ document.getElementById('pelawatPanel').style.display='none'; checkSession(); location.reload(); }
-    function resetSesi(){ if(confirm("Reset sesi?")){localStorage.removeItem('ehadir_session');location.reload();} }
-</script>
-</body>
+    async function handleCheckout() {
+      const btn = document.getElementById('checkout-btn');
+      btn.disabled = true;
+      btn.innerHTML = '<div class="spinner"></div>';
+
+      try {
+        const now = new Date();
+        const identifier = currentCategory === 'GURU' ? currentUser.email : document.getElementById('staff-name').value.trim().toUpperCase();
+        
+        const activeRecord = todayRecords.find(r => 
+          ((r.emel && r.emel === identifier) || r.nama === identifier) && 
+          r.waktuMasuk && 
+          !r.waktuKeluar
+        );
+
+        if (activeRecord) {
+          activeRecord.waktuKeluar = formatTime(now);
+          const result = await window.dataSdk.update(activeRecord);
+          if (result.isOk) {
+            showToast('✅ Daftar keluar berjaya!', 'success');
+          } else {
+            showToast('❌ Gagal mengemas kini rekod', 'error');
+          }
+        }
+      } catch (error) {
+        console.error('Checkout error:', error);
+        showToast('❌ Ralat semasa daftar keluar', 'error');
+      }
+
+      btn.disabled = false;
+      btn.innerHTML = '<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"/></svg> KELUAR';
+      updateActionButtons();
+    }
+
+    // ==================== VISITOR ====================
+    function openVisitorModal() {
+      document.getElementById('visitor-modal').classList.remove('hidden');
+      document.getElementById('visitor-name').value = '';
+      document.getElementById('visitor-purpose').value = '';
+      updateVisitorButton();
+    }
+
+    function closeVisitorModal() {
+      document.getElementById('visitor-modal').classList.add('hidden');
+    }
+
+    function updateVisitorButton() {
+      const name = document.getElementById('visitor-name').value.trim();
+      const purpose = document.getElementById('visitor-purpose').value.trim();
+      const btn = document.getElementById('submit-visitor-btn');
+      btn.disabled = name.length === 0 && purpose.length === 0;
+    }
+
+    async function submitVisitor() {
+      const btn = document.getElementById('submit-visitor-btn');
+      btn.disabled = true;
+      btn.innerHTML = '<div class="spinner"></div>';
+
+      try {
+        const now = new Date();
+        const record = {
+          id: generateId(),
+          nama: document.getElementById('visitor-name').value.trim().toUpperCase(),
+          emel: '',
+          kategori: 'PELAWAT',
+          waktuMasuk: formatTime(now),
+          waktuKeluar: '',
+          lokasiGPS: currentGPS ? `${currentGPS.lat.toFixed(6)}, ${currentGPS.lng.toFixed(6)}` : 'Tidak tersedia',
+          linkGambar: '',
+          deviceId: settings.deviceId,
+          statusSync: 'pending',
+          isPelawat: true,
+          tarikh: getTodayDateString(),
+          timestamp: now.toISOString(),
+          tujuan: document.getElementById('visitor-purpose').value.trim()
+        };
+
+        const result = await window.dataSdk.create(record);
+        if (result.isOk) {
+          showToast('✅ Pelawat berjaya didaftarkan!', 'success');
+          closeVisitorModal();
+        } else {
+          showToast('❌ Gagal mendaftar pelawat', 'error');
+        }
+      } catch (error) {
+        console.error('Visitor error:', error);
+        showToast('❌ Ralat semasa mendaftar pelawat', 'error');
+      }
+
+      btn.disabled = false;
+      btn.innerHTML = '<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg> Daftar Pelawat';
+    }
+
+    // ==================== ADMIN ====================
+    function openAdminModal() {
+      document.getElementById('admin-modal').classList.remove('hidden');
+      document.getElementById('admin-password').value = '';
+      document.getElementById('admin-error').classList.add('hidden');
+      document.getElementById('admin-password-section').classList.remove('hidden');
+      document.getElementById('admin-content').classList.add('hidden');
+      
+      document.getElementById('gas-url').value = settings.gasUrl || '';
+      document.getElementById('google-client-id').value = settings.googleClientId || '';
+      document.getElementById('school-lat').value = settings.schoolLat || '';
+      document.getElementById('school-lng').value = settings.schoolLng || '';
+      updateGeofencingUI();
+    }
+
+    function closeAdminModal() {
+      document.getElementById('admin-modal').classList.add('hidden');
+    }
+
+    function handleAdminLogin() {
+      const password = document.getElementById('admin-password').value;
+      if (password === ADMIN_PASSWORD) {
+        document.getElementById('admin-password-section').classList.add('hidden');
+        document.getElementById('admin-content').classList.remove('hidden');
+      } else {
+        document.getElementById('admin-error').classList.remove('hidden');
+        document.getElementById('admin-password').value = '';
+      }
+    }
+
+    function saveAdminConfig() {
+      settings.gasUrl = document.getElementById('gas-url').value.trim();
+      settings.googleClientId = document.getElementById('google-client-id').value.trim();
+      saveSettings();
+      showToast('✅ Konfigurasi disimpan', 'success');
+      initGoogleAuth();
+    }
+
+    function saveAdminControl() {
+      settings.schoolLat = parseFloat(document.getElementById('school-lat').value) || 0;
+      settings.schoolLng = parseFloat(document.getElementById('school-lng').value) || 0;
+      saveSettings();
+      updateGPSStatus();
+      showToast('✅ Tetapan disimpan', 'success');
+    }
+
+    function toggleGeofencing() {
+      settings.geofencingEnabled = !settings.geofencingEnabled;
+      updateGeofencingUI();
+      saveSettings();
+      showToast(`🔐 Geofencing ${settings.geofencingEnabled ? 'DIHIDUPKAN' : 'DIMATIKAN'}`, 'success');
+    }
+
+    function updateGeofencingUI() {
+      const btn = document.getElementById('toggle-geofence');
+      const dot = document.getElementById('geofence-toggle-dot');
+      const statusText = document.getElementById('geofence-status-text');
+      
+      if (settings.geofencingEnabled) {
+        btn.style.background = '#10B981';
+        dot.style.transform = 'translateX(29px)';
+        statusText.textContent = 'DIHIDUPKAN';
+        statusText.className = 'text-green-600 font-bold';
+      } else {
+        btn.style.background = '#ccc';
+        dot.style.transform = 'translateX(1px)';
+        statusText.textContent = 'DIMATIKAN';
+        statusText.className = 'text-gray-500 font-bold';
+      }
+    }
+
+    function getCurrentLocationForAdmin() {
+      if (currentGPS) {
+        document.getElementById('school-lat').value = currentGPS.lat;
+        document.getElementById('school-lng').value = currentGPS.lng;
+        showToast('📍 Lokasi semasa digunakan', 'success');
+      } else {
+        showToast('⚠️ GPS belum tersedia', 'warning');
+      }
+    }
+
+    // ==================== FILTER ====================
+    function handleFilterTabs() {
+      document.querySelectorAll('.tab-btn').forEach(tab => {
+        tab.addEventListener('click', () => {
+          document.querySelectorAll('.tab-btn').forEach(t => t.classList.remove('active'));
+          tab.classList.add('active');
+          currentFilter = tab.dataset.filter;
+          renderRecords();
+        });
+      });
+    }
+
+    function handleAdminTabs() {
+      document.querySelectorAll('.admin-tab').forEach(tab => {
+        tab.addEventListener('click', () => {
+          document.querySelectorAll('.admin-tab').forEach(t => t.classList.remove('active'));
+          tab.classList.add('active');
+          document.querySelectorAll('.admin-tab-content').forEach(c => c.classList.add('hidden'));
+          document.getElementById(`tab-${tab.dataset.tab}`).classList.remove('hidden');
+        });
+      });
+    }
+
+    // ==================== CLOCK ====================
+    function updateClock() {
+      const now = new Date();
+      document.getElementById('current-date').textContent = formatDate(now);
+      document.getElementById('current-time').textContent = formatTime(now);
+    }
+
+    // ==================== GOOGLE LOGIN ====================
+    function initGoogleAuth() {
+      if (settings.googleClientId && window.google) {
+        try {
+          tokenClient = google.accounts.oauth2.initTokenClient({
+            client_id: settings.googleClientId,
+            scope: 'https://www.googleapis.com/auth/userinfo.email https://www.googleapis.com/auth/userinfo.profile',
+            callback: (response) => {
+              if (response.access_token) {
+                fetchUserProfile(response.access_token);
+              }
+            },
+          });
+          console.log('Google Auth Initialized');
+        } catch (e) {
+          console.error('Google Auth Init Error:', e);
+        }
+      }
+    }
+
+    async function fetchUserProfile(accessToken) {
+        try {
+            const response = await fetch('https://www.googleapis.com/oauth2/v3/userinfo', {
+                headers: { Authorization: `Bearer ${accessToken}` }
+            });
+            const profile = await response.json();
+            
+            currentUser = {
+                id: profile.sub,
+                name: profile.name,
+                email: profile.email,
+                imageUrl: profile.picture
+            };
+            
+            saveCurrentUser();
+            updateUIForLoggedInUser();
+            updateActionButtons();
+            showToast('✅ Log masuk berjaya!', 'success');
+        } catch (e) {
+            console.error('Profile fetch error:', e);
+            showToast('❌ Gagal mendapatkan profil', 'error');
+        }
+    }
+
+    function mockGoogleLogin() {
+      currentUser = { email: 'guru@delima.edu.my', name: 'GURU DEMO', imageUrl: 'https://ui-avatars.com/api/?name=Guru+Demo&background=0D8ABC&color=fff' };
+      localStorage.setItem('bound_google_email', currentUser.email);
+      saveCurrentUser();
+      updateUIForLoggedInUser();
+      updateActionButtons();
+      showToast('✅ Log masuk berjaya (Demo)', 'success');
+    }
+
+    function updateUIForLoggedInUser() {
+        if(currentUser) {
+            const userInfo = document.getElementById('google-user-info');
+            const userAvatar = document.getElementById('user-avatar');
+            const userEmail = document.getElementById('google-email');
+            const loginBtn = document.getElementById('google-login-btn');
+
+            userInfo.classList.remove('hidden');
+            userAvatar.src = currentUser.imageUrl || 'https://ui-avatars.com/api/?name=' + currentUser.name;
+            userEmail.textContent = currentUser.email;
+            loginBtn.classList.add('hidden');
+        }
+    }
+
+    function handleGoogleButtonClick() {
+        if (tokenClient) {
+            tokenClient.requestAccessToken();
+        } else {
+            if(!settings.googleClientId) {
+                 showToast('⚠️ Sila tetapkan Google Client ID di Admin', 'warning');
+                 mockGoogleLogin(); 
+            } else {
+                 mockGoogleLogin();
+            }
+        }
+    }
+
+    // ==================== ELEMENT SDK ====================
+    async function initElementSdk() {
+      if (window.elementSdk) {
+        await window.elementSdk.init({
+          defaultConfig,
+          onConfigChange: async (config) => {
+            document.getElementById('app-title').textContent = config.app_title || defaultConfig.app_title;
+            document.getElementById('school-name').textContent = config.school_name || defaultConfig.school_name;
+          },
+          mapToCapabilities: () => ({ recolorables: [], borderables: [], fontEditable: undefined, fontSizeable: undefined }),
+          mapToEditPanelValues: (config) => new Map([
+            ['app_title', config.app_title || defaultConfig.app_title],
+            ['school_name', config.school_name || defaultConfig.school_name]
+          ])
+        });
+      }
+    }
+
+    // ==================== DATA SDK ====================
+    async function initDataSdk() {
+      if (window.dataSdk) {
+        const result = await window.dataSdk.init(dataHandler);
+        if (!result.isOk) console.error('Data SDK init failed');
+      }
+    }
+
+    // ==================== EVENT LISTENERS ====================
+    function initEventListeners() {
+      document.getElementById('category-select').addEventListener('change', handleCategoryChange);
+      document.getElementById('staff-name').addEventListener('input', (e) => {
+        e.target.value = e.target.value.toUpperCase();
+        updateActionButtons();
+      });
+      document.getElementById('checkin-btn').addEventListener('click', handleCheckin);
+      document.getElementById('checkout-btn').addEventListener('click', handleCheckout);
+      document.getElementById('google-login-btn').addEventListener('click', handleGoogleButtonClick);
+      
+      document.getElementById('visitor-fab').addEventListener('click', openVisitorModal);
+      document.getElementById('close-visitor-modal').addEventListener('click', closeVisitorModal);
+      document.getElementById('visitor-name').addEventListener('input', (e) => {
+        e.target.value = e.target.value.toUpperCase();
+        updateVisitorButton();
+      });
+      document.getElementById('visitor-purpose').addEventListener('input', updateVisitorButton);
+      document.getElementById('submit-visitor-btn').addEventListener('click', submitVisitor);
+      
+      document.getElementById('admin-btn').addEventListener('click', openAdminModal);
+      document.getElementById('close-admin-modal').addEventListener('click', closeAdminModal);
+      document.getElementById('admin-login-btn').addEventListener('click', handleAdminLogin);
+      document.getElementById('admin-password').addEventListener('keypress', (e) => {
+        if (e.key === 'Enter') handleAdminLogin();
+      });
+      
+      document.getElementById('save-config-btn').addEventListener('click', saveAdminConfig);
+      document.getElementById('save-control-btn').addEventListener('click', saveAdminControl);
+      document.getElementById('get-current-location').addEventListener('click', getCurrentLocationForAdmin);
+      document.getElementById('toggle-geofence').addEventListener('click', toggleGeofencing);
+      
+      window.addEventListener('online', updateOnlineStatus);
+      window.addEventListener('offline', updateOnlineStatus);
+      
+      handleFilterTabs();
+      handleAdminTabs();
+    }
+
+    // ==================== INIT ====================
+    async function init() {
+      loadSettings();
+      loadCurrentUser();
+      
+      if (currentUser) {
+        updateUIForLoggedInUser();
+      }
+      
+      await initElementSdk();
+      await initDataSdk();
+      initEventListeners();
+      initGPS();
+      initGoogleAuth();
+      updateOnlineStatus();
+      updateClock();
+      setInterval(updateClock, 1000);
+    }
+
+    init();
+  </script>
+ <script>(function(){function c(){var b=a.contentDocument||a.contentWindow.document;if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'9d7a1e6c62daace9',t:'MTc3MjcyNDE3NS4wMDAwMDA='};var a=document.createElement('script');a.nonce='';a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script></body>
 </html>
