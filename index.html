@@ -335,8 +335,9 @@
                     <p id="google-email" class="font-bold text-gray-800 truncate text-sm"></p>
                 </div>
             </div>
-            <button id="google-logout-btn" class="p-2 text-red-500 hover:bg-red-50 rounded-lg transition-colors" title="Log Keluar">
-              <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"/></svg>
+            <button id="google-logout-btn" class="px-3 py-2 bg-red-100 text-red-600 rounded-lg hover:bg-red-200 transition-colors flex items-center gap-2" title="Log Keluar">
+              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"/></svg>
+              <span class="text-xs font-bold">TUKAR AKAUN</span>
             </button>
           </div>
        </div>
@@ -691,8 +692,8 @@ async function syncAttendanceData() {
 // Kemudian Deploy sebagai Web App
 
 // ===== KONFIGURASI =====
-const SPREADSHEET_ID = 'YOUR_SPREADSHEET_ID';
-const DRIVE_FOLDER_ID = 'YOUR_DRIVE_FOLDER_ID';
+const SPREADSHEET_ID = '1iUdTt97cB2jikhJQWXua3exnzVQTps9FP4jjpSPzbOc';
+const DRIVE_FOLDER_ID = '17bN3qRKyryr2sRorPkCbrPmbgRzL8A4W';
 const SHEET_NAMES = {
   GURU: 'GURU',
   AKP: 'AKP',
@@ -1221,17 +1222,6 @@ function setup() {
     // ==================== API HELPERS ====================
     async function callAppsScript(action, payload) {
       if (!settings.gasUrl) throw new Error('URL Google Apps Script belum ditetapkan');
-      const response = await fetch(settings.gasUrl, {
-        method: 'POST',
-        mode: 'no-cors',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action, ...payload })
-      });
-      // Note: 'no-cors' mode returns opaque response. For full interaction we need proper CORS handling in GAS
-      // But since we can't easily change GAS headers here without full proxy, we assume success or rely on SDK for data ops.
-      // HOWEVER, for Validation/Registration we need response. 
-      // We will use standard fetch assuming user deployed web app with "Anyone".
-      // If 'no-cors' is issue, we might need 'redirect: follow'.
       
       // RE-IMPLEMENTATION for simple usage:
       // We'll try standard fetch. If CORS fails, we can't get data back. 
@@ -1242,7 +1232,9 @@ function setup() {
          redirect: 'follow',
          headers: { "Content-Type": "text/plain;charset=utf-8" },
          body: JSON.stringify({ action, ...payload })
-      }).then(res => res.json());
+      }).then(res => res.json()).catch(err => {
+         throw new Error("Gagal menghubungi server (CORS/Network): " + err.message);
+      });
     }
 
     // ==================== CHECK IN/OUT ====================
@@ -1306,9 +1298,8 @@ function setup() {
         }
       } catch (error) {
         console.error('Checkin error:', error);
-        if(error.message !== 'User not registered' && error.message !== 'GPS Error' && error.message !== 'Geofence Error') {
-           showToast('❌ Ralat semasa daftar masuk', 'error');
-        }
+        // Display detailed error for debugging as requested
+        showToast(`❌ Ralat: ${error.message || error}`, 'error');
       }
 
       btn.disabled = false;
@@ -1592,7 +1583,7 @@ function setup() {
           tokenClient = google.accounts.oauth2.initTokenClient({
             client_id: settings.googleClientId,
             scope: 'https://www.googleapis.com/auth/userinfo.email https://www.googleapis.com/auth/userinfo.profile',
-            prompt: 'select_account', // Force account selection
+            prompt: 'consent select_account', // Force account selection
             callback: (response) => {
               if (response.access_token) {
                 fetchUserProfile(response.access_token);
@@ -1675,7 +1666,8 @@ function setup() {
 
     function handleGoogleButtonClick() {
         if (tokenClient) {
-            tokenClient.requestAccessToken({prompt: 'select_account'});
+            // Ensure prompt includes select_account to allow user to switch or choose account
+            tokenClient.requestAccessToken({prompt: 'consent select_account'});
         } else {
             if(!settings.googleClientId) {
                  showToast('⚠️ Sila tetapkan Google Client ID di Admin', 'warning');
