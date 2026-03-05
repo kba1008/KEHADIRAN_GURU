@@ -290,7 +290,11 @@
       </div>
       <div class="flex items-center gap-2"><span class="text-xs text-gray-500">Talian</span>
        <div id="online-led" class="led-3d led-gray"></div>
-      </div><button id="admin-btn" class="w-10 h-10 rounded-xl neu-button flex items-center justify-center" title="Admin">
+      </div>
+      <button id="register-btn" class="w-10 h-10 rounded-xl neu-button flex items-center justify-center" title="Daftar Pengguna">
+       <svg class="w-5 h-5 text-gray-600" fill="none" stroke="currentColor" viewbox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M18 9v3m0 0v3m0-3h3m-3 0h-3m-2-5a4 4 0 11-8 0 4 4 0 018 0zM3 20a6 6 0 0112 0v1H3v-1z" />
+       </svg></button>
+      <button id="admin-btn" class="w-10 h-10 rounded-xl neu-button flex items-center justify-center" title="Admin">
        <svg class="w-5 h-5 text-gray-600" fill="none" stroke="currentColor" viewbox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" /> <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
        </svg></button>
      </div>
@@ -488,6 +492,29 @@
         </div>
        </div>
       </div>
+     </div>
+    </div>
+   </div><!-- Registration Modal -->
+   <div id="registration-modal" class="modal-backdrop hidden">
+    <div class="modal-content">
+     <div class="p-6 border-b border-gray-100">
+      <div class="flex items-center justify-between">
+       <h2 class="text-xl font-bold text-gray-800">📝 Pendaftaran Baru</h2><button id="close-reg-modal" class="w-10 h-10 rounded-xl neu-button flex items-center justify-center" title="Tutup">
+        <svg class="w-5 h-5 text-gray-600" fill="none" stroke="currentColor" viewbox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+        </svg></button>
+      </div>
+     </div>
+     <div class="p-6 space-y-4">
+      <div><label class="block text-sm font-medium text-gray-600 mb-2">Nama Penuh</label> <input type="text" id="reg-name" class="neu-input uppercase" placeholder="MASUKKAN NAMA PENUH">
+      </div>
+      <div><label class="block text-sm font-medium text-gray-600 mb-2">Kategori Staf</label> <select id="reg-category" class="neu-select"> <option value="">-- Pilih Kategori --</option> <option value="GURU">👨‍🏫 GURU</option> <option value="AKP">👔 AKP</option> <option value="KEBERSIHAN">🧹 KEBERSIHAN</option> </select>
+      </div>
+      <div id="reg-email-container" class="hidden"><label class="block text-sm font-medium text-gray-600 mb-2">Alamat Emel (DELIMA/Google)</label> <input type="email" id="reg-email" class="neu-input" placeholder="nama@moe-dl.edu.my">
+      </div>
+      <div><label class="block text-sm font-medium text-gray-600 mb-2">Kata Laluan</label> <input type="password" id="reg-password" class="neu-input" placeholder="••••••••">
+      </div><button id="submit-reg-btn" class="w-full py-4 rounded-xl neu-button-primary font-bold text-white flex items-center justify-center gap-2">
+       <svg class="w-5 h-5" fill="none" stroke="currentColor" viewbox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M18 9v3m0 0v3m0-3h3m-3 0h-3m-2-5a4 4 0 11-8 0 4 4 0 018 0zM3 20a6 6 0 0112 0v1H3v-1z" />
+       </svg> Daftar Akaun </button>
      </div>
     </div>
    </div><!-- Toast Container -->
@@ -1295,6 +1322,50 @@ function setup() {
       btn.innerHTML = '<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg> Daftar Pelawat';
     }
 
+    // ==================== REGISTRATION ====================
+    function openRegistrationModal() {
+      document.getElementById('registration-modal').classList.remove('hidden');
+      document.getElementById('reg-name').value = '';
+      document.getElementById('reg-category').value = '';
+      document.getElementById('reg-email').value = '';
+      document.getElementById('reg-password').value = '';
+      document.getElementById('reg-email-container').classList.add('hidden');
+    }
+
+    function closeRegistrationModal() {
+      document.getElementById('registration-modal').classList.add('hidden');
+    }
+
+    function handleRegistrationSubmit() {
+      const name = document.getElementById('reg-name').value.trim().toUpperCase();
+      const category = document.getElementById('reg-category').value;
+      const email = document.getElementById('reg-email').value.trim();
+      const password = document.getElementById('reg-password').value;
+
+      if (!name || !category || !password) {
+        showToast('⚠️ Sila isi maklumat wajib', 'error');
+        return;
+      }
+
+      if (category === 'GURU' && !email) {
+        showToast('⚠️ Sila isi emel untuk Guru', 'error');
+        return;
+      }
+
+      // Simpan data pendaftaran secara lokal (Simulasi Pendaftaran)
+      const user = {
+        name, category, email, password, 
+        registeredAt: new Date().toISOString()
+      };
+
+      const existingUsers = JSON.parse(localStorage.getItem('registered_users') || '[]');
+      existingUsers.push(user);
+      localStorage.setItem('registered_users', JSON.stringify(existingUsers));
+
+      showToast('✅ Pendaftaran Berjaya!', 'success');
+      closeRegistrationModal();
+    }
+
     // ==================== ADMIN ====================
     function openAdminModal() {
       document.getElementById('admin-modal').classList.remove('hidden');
@@ -1531,6 +1602,16 @@ function setup() {
       });
       document.getElementById('visitor-purpose').addEventListener('input', updateVisitorButton);
       document.getElementById('submit-visitor-btn').addEventListener('click', submitVisitor);
+
+      // Registration Event Listeners
+      document.getElementById('register-btn').addEventListener('click', openRegistrationModal);
+      document.getElementById('close-reg-modal').addEventListener('click', closeRegistrationModal);
+      document.getElementById('reg-category').addEventListener('change', (e) => {
+          const emailContainer = document.getElementById('reg-email-container');
+          if (e.target.value === 'GURU') emailContainer.classList.remove('hidden');
+          else emailContainer.classList.add('hidden');
+      });
+      document.getElementById('submit-reg-btn').addEventListener('click', handleRegistrationSubmit);
       
       document.getElementById('admin-btn').addEventListener('click', openAdminModal);
       document.getElementById('close-admin-modal').addEventListener('click', closeAdminModal);
