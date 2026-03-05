@@ -327,12 +327,17 @@
          <span>Log Masuk dengan Google</span>
        </button>
        <div id="google-user-info" class="hidden mt-4 p-4 bg-green-50 rounded-xl border border-green-200 animate-fade-in">
-          <div class="flex items-center gap-3">
-              <img id="user-avatar" src="" class="w-10 h-10 rounded-full border-2 border-white shadow-sm">
-              <div class="text-left overflow-hidden">
-                  <p class="text-xs text-green-600 font-bold">Log Masuk Berjaya</p>
-                  <p id="google-email" class="font-bold text-gray-800 truncate text-sm"></p>
-              </div>
+          <div class="flex items-center justify-between">
+            <div class="flex items-center gap-3 overflow-hidden">
+                <img id="user-avatar" src="" class="w-10 h-10 rounded-full border-2 border-white shadow-sm flex-shrink-0">
+                <div class="text-left overflow-hidden">
+                    <p class="text-xs text-green-600 font-bold">Log Masuk Berjaya</p>
+                    <p id="google-email" class="font-bold text-gray-800 truncate text-sm"></p>
+                </div>
+            </div>
+            <button id="google-logout-btn" class="p-2 text-red-500 hover:bg-red-50 rounded-lg transition-colors" title="Log Keluar">
+              <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"/></svg>
+            </button>
           </div>
        </div>
       </div>
@@ -692,7 +697,8 @@ const SHEET_NAMES = {
   GURU: 'GURU',
   AKP: 'AKP',
   KEBERSIHAN: 'KEBERSIHAN',
-  PELAWAT: 'PELAWAT'
+  PELAWAT: 'PELAWAT',
+  PENDAFTARAN: 'PENDAFTARAN'
 };
 
 // ===== MAIN FUNCTIONS =====
@@ -710,6 +716,10 @@ function doPost(e) {
         return uploadImageToDrive(data);
       case 'getRecords':
         return getRecords(ss, data);
+      case 'registerUser':
+        return registerUser(ss, data);
+      case 'validateUser':
+        return validateUser(ss, data);
       default:
         return createResponse(false, 'Unknown action');
     }
@@ -725,20 +735,93 @@ function doGet(e) {
     .setMimeType(ContentService.MimeType.JSON);
 }
 
+// ===== USER MANAGEMENT FUNCTIONS =====
+function registerUser(ss, data) {
+  try {
+    const sheet = ss.getSheetByName(SHEET_NAMES.PENDAFTARAN);
+    if (!sheet) return createResponse(false, 'Sheet PENDAFTARAN not found');
+    
+    // Check duplicates
+    const rows = sheet.getDataRange().getValues();
+    // Skip header row 0
+    for (let i = 1; i < rows.length; i++) {
+      const rowName = rows[i][1].toString().toUpperCase();
+      const rowEmail = rows[i][3].toString().toLowerCase();
+      
+      if (rowName === data.nama.toUpperCase()) {
+        return createResponse(false, 'DUPLICATE_NAME');
+      }
+      if (data.email && rowEmail === data.email.toLowerCase()) {
+        return createResponse(false, 'DUPLICATE_EMAIL');
+      }
+    }
+    
+    // Append new user
+    sheet.appendRow([
+      new Date().toISOString(),
+      data.nama.toUpperCase(),
+      data.kategori,
+      data.email ? data.email.toLowerCase() : '-',
+      data.password,
+      'AKTIF'
+    ]);
+    
+    return createResponse(true, 'Pendaftaran berjaya');
+  } catch(error) {
+    return createResponse(false, error.toString());
+  }
+}
+
+function validateUser(ss, data) {
+  try {
+    const sheet = ss.getSheetByName(SHEET_NAMES.PENDAFTARAN);
+    if (!sheet) return createResponse(false, 'Sheet PENDAFTARAN not found');
+    
+    const rows = sheet.getDataRange().getValues();
+    let isValid = false;
+    let userData = null;
+    
+    for (let i = 1; i < rows.length; i++) {
+      // For Guru: Check Email
+      if (data.email) {
+        if (rows[i][3].toString().toLowerCase() === data.email.toLowerCase()) {
+           isValid = true;
+           userData = { nama: rows[i][1], kategori: rows[i][2] };
+           break;
+        }
+      } 
+      // For Others: Check Name
+      else if (data.nama) {
+        if (rows[i][1].toString().toUpperCase() === data.nama.toUpperCase()) {
+           isValid = true;
+           userData = { nama: rows[i][1], kategori: rows[i][2] };
+           break;
+        }
+      }
+    }
+    
+    if(isValid) {
+       return createResponse(true, 'User valid', userData);
+    } else {
+       return createResponse(false, 'User not found in registry');
+    }
+  } catch(error) {
+    return createResponse(false, error.toString());
+  }
+}
+
 // ===== ATTENDANCE FUNCTIONS =====
 function addAttendanceRecord(ss, data) {
   try {
     const kategori = data.kategori || 'UMUM';
     let sheet = ss.getSheetByName(SHEET_NAMES[kategori]);
     
-    // Cipta sheet jika belum wujud
     if (!sheet) {
       sheet = ss.insertSheet(SHEET_NAMES[kategori]);
       sheet.appendRow(['Timestamp', 'Tarikh', 'Nama', 'Emel', 'Waktu Masuk', 'Waktu Keluar', 'Lokasi GPS', 'Device ID', 'Link Gambar', 'Tujuan', 'Status']);
       sheet.setFrozenRows(1);
     }
     
-    // Tambah rekod
     sheet.appendRow([
       new Date().toISOString(),
       data.tarikh || new Date().toLocaleDateString('ms-MY'),
@@ -753,10 +836,8 @@ function addAttendanceRecord(ss, data) {
       data.statusSync || 'synced'
     ]);
     
-    Logger.log('Record added: ' + data.nama);
     return createResponse(true, 'Record added successfully');
   } catch(error) {
-    Logger.log('Add record error: ' + error);
     return createResponse(false, error.toString());
   }
 }
@@ -764,19 +845,15 @@ function addAttendanceRecord(ss, data) {
 function updateCheckoutTime(ss, data) {
   try {
     const sheet = ss.getSheetByName(SHEET_NAMES[data.kategori]);
-    if (!sheet) {
-      return createResponse(false, 'Sheet not found');
-    }
+    if (!sheet) return createResponse(false, 'Sheet not found');
     
     const rows = sheet.getDataRange().getValues();
     for (let i = 1; i < rows.length; i++) {
       if (rows[i][7] === data.deviceId && rows[i][4] === data.waktuMasuk) {
         sheet.getRange(i + 1, 6).setValue(data.waktuKeluar);
-        Logger.log('Checkout updated for device: ' + data.deviceId);
         return createResponse(true, 'Checkout updated');
       }
     }
-    
     return createResponse(false, 'Record not found');
   } catch(error) {
     return createResponse(false, error.toString());
@@ -786,8 +863,6 @@ function updateCheckoutTime(ss, data) {
 function uploadImageToDrive(data) {
   try {
     const folder = DriveApp.getFolderById(DRIVE_FOLDER_ID);
-    
-    // Buat subfolder untuk hari ini
     const today = new Date().toLocaleDateString('ms-MY');
     let todayFolder = null;
     
@@ -800,11 +875,8 @@ function uploadImageToDrive(data) {
       }
     }
     
-    if (!todayFolder) {
-      todayFolder = folder.createFolder(today);
-    }
+    if (!todayFolder) todayFolder = folder.createFolder(today);
     
-    // Buat file dari base64
     const imageBlob = Utilities.newBlob(
       Utilities.base64Decode(data.imageBase64),
       'image/jpeg',
@@ -812,10 +884,7 @@ function uploadImageToDrive(data) {
     );
     
     const file = todayFolder.createFile(imageBlob);
-    const fileUrl = file.getUrl();
-    
-    Logger.log('Image uploaded: ' + fileUrl);
-    return createResponse(true, 'Image uploaded', {url: fileUrl});
+    return createResponse(true, 'Image uploaded', {url: file.getUrl()});
   } catch(error) {
     return createResponse(false, error.toString());
   }
@@ -824,9 +893,7 @@ function uploadImageToDrive(data) {
 function getRecords(ss, data) {
   try {
     const sheet = ss.getSheetByName(SHEET_NAMES[data.kategori || 'GURU']);
-    if (!sheet) {
-      return createResponse(false, 'Sheet not found');
-    }
+    if (!sheet) return createResponse(false, 'Sheet not found');
     
     const records = sheet.getDataRange().getValues();
     return createResponse(true, 'Records retrieved', {records: records, count: records.length});
@@ -837,46 +904,32 @@ function getRecords(ss, data) {
 
 // ===== UTILITY FUNCTIONS =====
 function createResponse(success, message, data = {}) {
-  const response = {
-    success: success,
-    message: message,
-    timestamp: new Date().toISOString(),
-    ...data
-  };
-  
   return ContentService
-    .createTextOutput(JSON.stringify(response))
+    .createTextOutput(JSON.stringify({success, message, timestamp: new Date().toISOString(), ...data}))
     .setMimeType(ContentService.MimeType.JSON);
 }
 
 function createImageFolder() {
-  const mainFolder = DriveApp.getFolderById(DRIVE_FOLDER_ID);
-  
   try {
-    mainFolder.createFolder('GAMBAR');
-  } catch(e) {
-    Logger.log('Folder already exists or error: ' + e);
-  }
+    DriveApp.getFolderById(DRIVE_FOLDER_ID).createFolder('GAMBAR');
+  } catch(e) {}
 }
 
-// ===== SETUP FUNCTION (Jalankan sekali) =====
 function setup() {
   const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
-  
-  // Cipta semua sheets
   Object.values(SHEET_NAMES).forEach(name => {
     let sheet = ss.getSheetByName(name);
     if (!sheet) {
       sheet = ss.insertSheet(name);
-      sheet.appendRow(['Timestamp', 'Tarikh', 'Nama', 'Emel', 'Waktu Masuk', 'Waktu Keluar', 'Lokasi GPS', 'Device ID', 'Link Gambar', 'Tujuan', 'Status']);
+      if(name === 'PENDAFTARAN') {
+         sheet.appendRow(['Timestamp', 'Nama', 'Kategori', 'Emel', 'Kata Laluan', 'Status']);
+      } else {
+         sheet.appendRow(['Timestamp', 'Tarikh', 'Nama', 'Emel', 'Waktu Masuk', 'Waktu Keluar', 'Lokasi GPS', 'Device ID', 'Link Gambar', 'Tujuan', 'Status']);
+      }
       sheet.setFrozenRows(1);
     }
   });
-  
-  // Cipta folder gambar
   createImageFolder();
-  
-  Logger.log('Setup complete!');
 }`
     };
 
@@ -1000,6 +1053,7 @@ function setup() {
 
     function saveCurrentUser() {
       if (currentUser) localStorage.setItem('current_user', JSON.stringify(currentUser));
+      else localStorage.removeItem('current_user');
     }
 
     function loadCurrentUser() {
@@ -1044,7 +1098,7 @@ function setup() {
 
       if (settings.schoolLat && settings.schoolLng) {
         const distance = calculateDistance(currentGPS.lat, currentGPS.lng, settings.schoolLat, settings.schoolLng);
-        isWithinGeofence = distance <= 100;
+        isWithinGeofence = distance <= 200;
         
         if (isWithinGeofence) {
           led.className = 'led-3d led-green';
@@ -1164,6 +1218,33 @@ function setup() {
       );
     }
 
+    // ==================== API HELPERS ====================
+    async function callAppsScript(action, payload) {
+      if (!settings.gasUrl) throw new Error('URL Google Apps Script belum ditetapkan');
+      const response = await fetch(settings.gasUrl, {
+        method: 'POST',
+        mode: 'no-cors',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action, ...payload })
+      });
+      // Note: 'no-cors' mode returns opaque response. For full interaction we need proper CORS handling in GAS
+      // But since we can't easily change GAS headers here without full proxy, we assume success or rely on SDK for data ops.
+      // HOWEVER, for Validation/Registration we need response. 
+      // We will use standard fetch assuming user deployed web app with "Anyone".
+      // If 'no-cors' is issue, we might need 'redirect: follow'.
+      
+      // RE-IMPLEMENTATION for simple usage:
+      // We'll try standard fetch. If CORS fails, we can't get data back. 
+      // The user must set "Who has access" to "Anyone" in GAS deployment.
+      
+      return fetch(settings.gasUrl, {
+         method: 'POST',
+         redirect: 'follow',
+         headers: { "Content-Type": "text/plain;charset=utf-8" },
+         body: JSON.stringify({ action, ...payload })
+      }).then(res => res.json());
+    }
+
     // ==================== CHECK IN/OUT ====================
     async function handleCheckin() {
       const btn = document.getElementById('checkin-btn');
@@ -1171,28 +1252,32 @@ function setup() {
       btn.innerHTML = '<div class="spinner"></div>';
 
       try {
+        // CHECK VALIDATION WITH PENDAFTARAN FOR NON-GURU
+        if (currentCategory !== 'GURU' && settings.gasUrl) {
+            const name = document.getElementById('staff-name').value.trim();
+            const validRes = await callAppsScript('validateUser', { nama: name });
+            if (!validRes.success) {
+                showToast('❌ Nama tidak dijumpai dalam sistem Pendaftaran. Sila daftar dahulu.', 'error');
+                throw new Error('User not registered');
+            }
+        }
+
         // CHECK GEOFENCING - HANYA JIKA DIHIDUPKAN
         if (settings.geofencingEnabled) {
           if (!currentGPS) {
             showToast('❌ GPS tidak tersedia. Hidup GPS dan cuba lagi', 'error');
-            btn.disabled = false;
-            btn.innerHTML = '<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 16l-4-4m0 0l4-4m-4 4h14m-5 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h7a3 3 0 013 3v1"/></svg> MASUK';
-            return;
+            throw new Error('GPS Error');
           }
 
           if (!settings.schoolLat || !settings.schoolLng) {
             showToast('❌ Koordinat sekolah belum ditetapkan di Admin', 'error');
-            btn.disabled = false;
-            btn.innerHTML = '<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 16l-4-4m0 0l4-4m-4 4h14m-5 4v1a3 3 0 01-3 3H6a3 3 0 013-3V7a3 3 0 013-3h7a3 3 0 013 3v1"/></svg> MASUK';
-            return;
+            throw new Error('Config Error');
           }
 
           const distance = calculateDistance(currentGPS.lat, currentGPS.lng, settings.schoolLat, settings.schoolLng);
           if (distance > 200) {
             showToast(`❌ Anda di luar kawasan. Jarak: ${Math.round(distance)}m (Perlu dalam 200m)`, 'error');
-            btn.disabled = false;
-            btn.innerHTML = '<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 16l-4-4m0 0l4-4m-4 4h14m-5 4v1a3 3 0 01-3 3H6a3 3 0 013-3V7a3 3 0 013-3h7a3 3 0 013 3v1"/></svg> MASUK';
-            return;
+            throw new Error('Geofence Error');
           }
         }
 
@@ -1221,11 +1306,13 @@ function setup() {
         }
       } catch (error) {
         console.error('Checkin error:', error);
-        showToast('❌ Ralat semasa daftar masuk', 'error');
+        if(error.message !== 'User not registered' && error.message !== 'GPS Error' && error.message !== 'Geofence Error') {
+           showToast('❌ Ralat semasa daftar masuk', 'error');
+        }
       }
 
       btn.disabled = false;
-      btn.innerHTML = '<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 16l-4-4m0 0l4-4m-4 4h14m-5 4v1a3 3 0 01-3 3H6a3 3 0 013-3V7a3 3 0 013-3h7a3 3 0 013 3v1"/></svg> MASUK';
+      btn.innerHTML = '<svg class="w-5 h-5" fill="none" stroke="currentColor" viewbox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 16l-4-4m0 0l4-4m-4 4h14m-5 4v1a3 3 0 01-3 3H6a3 3 0 013-3V7a3 3 0 013-3h7a3 3 0 013 3v1"/></svg> MASUK';
       updateActionButtons();
     }
 
@@ -1259,7 +1346,7 @@ function setup() {
       }
 
       btn.disabled = false;
-      btn.innerHTML = '<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"/></svg> KELUAR';
+      btn.innerHTML = '<svg class="w-5 h-5" fill="none" stroke="currentColor" viewbox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"/></svg> KELUAR';
       updateActionButtons();
     }
 
@@ -1319,7 +1406,7 @@ function setup() {
       }
 
       btn.disabled = false;
-      btn.innerHTML = '<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg> Daftar Pelawat';
+      btn.innerHTML = '<svg class="w-5 h-5" fill="none" stroke="currentColor" viewbox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg> Daftar Pelawat';
     }
 
     // ==================== REGISTRATION ====================
@@ -1336,11 +1423,12 @@ function setup() {
       document.getElementById('registration-modal').classList.add('hidden');
     }
 
-    function handleRegistrationSubmit() {
-      const name = document.getElementById('reg-name').value.trim().toUpperCase();
+    async function handleRegistrationSubmit() {
+      const name = document.getElementById('reg-name').value.trim();
       const category = document.getElementById('reg-category').value;
       const email = document.getElementById('reg-email').value.trim();
       const password = document.getElementById('reg-password').value;
+      const btn = document.getElementById('submit-reg-btn');
 
       if (!name || !category || !password) {
         showToast('⚠️ Sila isi maklumat wajib', 'error');
@@ -1351,19 +1439,39 @@ function setup() {
         showToast('⚠️ Sila isi emel untuk Guru', 'error');
         return;
       }
+      
+      if (!settings.gasUrl) {
+        showToast('⚠️ URL Apps Script belum ditetapkan di Admin', 'error');
+        return;
+      }
 
-      // Simpan data pendaftaran secara lokal (Simulasi Pendaftaran)
-      const user = {
-        name, category, email, password, 
-        registeredAt: new Date().toISOString()
-      };
+      btn.disabled = true;
+      btn.innerHTML = '<div class="spinner"></div>';
 
-      const existingUsers = JSON.parse(localStorage.getItem('registered_users') || '[]');
-      existingUsers.push(user);
-      localStorage.setItem('registered_users', JSON.stringify(existingUsers));
-
-      showToast('✅ Pendaftaran Berjaya!', 'success');
-      closeRegistrationModal();
+      try {
+        const payload = {
+           nama: name,
+           kategori: category,
+           email: email,
+           password: password
+        };
+        
+        const result = await callAppsScript('registerUser', payload);
+        
+        if (result.success) {
+            showToast('✅ Pendaftaran Berjaya!', 'success');
+            closeRegistrationModal();
+        } else {
+            if(result.message === 'DUPLICATE_NAME') showToast('❌ Nama sudah didaftarkan. Sila guna nama lain.', 'error');
+            else if(result.message === 'DUPLICATE_EMAIL') showToast('❌ Emel sudah didaftarkan.', 'error');
+            else showToast('❌ Gagal: ' + result.message, 'error');
+        }
+      } catch(e) {
+        showToast('❌ Ralat sambungan: ' + e.message, 'error');
+      }
+      
+      btn.disabled = false;
+      btn.innerHTML = '<svg class="w-5 h-5" fill="none" stroke="currentColor" viewbox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M18 9v3m0 0v3m0-3h3m-3 0h-3m-2-5a4 4 0 11-8 0 4 4 0 018 0zM3 20a6 6 0 0112 0v1H3v-1z"/></svg> Daftar Akaun';
     }
 
     // ==================== ADMIN ====================
@@ -1484,6 +1592,7 @@ function setup() {
           tokenClient = google.accounts.oauth2.initTokenClient({
             client_id: settings.googleClientId,
             scope: 'https://www.googleapis.com/auth/userinfo.email https://www.googleapis.com/auth/userinfo.profile',
+            prompt: 'select_account', // Force account selection
             callback: (response) => {
               if (response.access_token) {
                 fetchUserProfile(response.access_token);
@@ -1504,6 +1613,15 @@ function setup() {
             });
             const profile = await response.json();
             
+            // Validate with App Script before allowing login
+            if (settings.gasUrl) {
+                const validRes = await callAppsScript('validateUser', { email: profile.email });
+                if (!validRes.success) {
+                    showToast('❌ Akaun belum didaftarkan dalam sistem. Sila daftar dahulu.', 'error');
+                    return;
+                }
+            }
+            
             currentUser = {
                 id: profile.sub,
                 name: profile.name,
@@ -1517,17 +1635,28 @@ function setup() {
             showToast('✅ Log masuk berjaya!', 'success');
         } catch (e) {
             console.error('Profile fetch error:', e);
-            showToast('❌ Gagal mendapatkan profil', 'error');
+            showToast('❌ Gagal log masuk / Validasi', 'error');
         }
     }
 
     function mockGoogleLogin() {
       currentUser = { email: 'guru@delima.edu.my', name: 'GURU DEMO', imageUrl: 'https://ui-avatars.com/api/?name=Guru+Demo&background=0D8ABC&color=fff' };
-      localStorage.setItem('bound_google_email', currentUser.email);
       saveCurrentUser();
       updateUIForLoggedInUser();
       updateActionButtons();
       showToast('✅ Log masuk berjaya (Demo)', 'success');
+    }
+
+    function handleLogout() {
+        currentUser = null;
+        saveCurrentUser();
+        const userInfo = document.getElementById('google-user-info');
+        const loginBtn = document.getElementById('google-login-btn');
+        userInfo.classList.add('hidden');
+        loginBtn.classList.remove('hidden');
+        updateActionButtons();
+        showToast('Info: Log Keluar Berjaya', 'info');
+        // Note: Actual Google Session revocation requires token, but simply clearing state is standard for SPA logout
     }
 
     function updateUIForLoggedInUser() {
@@ -1546,7 +1675,7 @@ function setup() {
 
     function handleGoogleButtonClick() {
         if (tokenClient) {
-            tokenClient.requestAccessToken();
+            tokenClient.requestAccessToken({prompt: 'select_account'});
         } else {
             if(!settings.googleClientId) {
                  showToast('⚠️ Sila tetapkan Google Client ID di Admin', 'warning');
@@ -1593,6 +1722,7 @@ function setup() {
       document.getElementById('checkin-btn').addEventListener('click', handleCheckin);
       document.getElementById('checkout-btn').addEventListener('click', handleCheckout);
       document.getElementById('google-login-btn').addEventListener('click', handleGoogleButtonClick);
+      document.getElementById('google-logout-btn').addEventListener('click', handleLogout);
       
       document.getElementById('visitor-fab').addEventListener('click', openVisitorModal);
       document.getElementById('close-visitor-modal').addEventListener('click', closeVisitorModal);
@@ -1653,5 +1783,5 @@ function setup() {
 
     init();
   </script>
- <script>(function(){function c(){var b=a.contentDocument||a.contentWindow.document;if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'9d7a1e6c62daace9',t:'MTc3MjcyNDE3NS4wMDAwMDA='};var a=document.createElement('script');a.nonce='';a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script></body>
+ </body>
 </html>
