@@ -311,6 +311,9 @@
              <img src="https://upload.wikimedia.org/wikipedia/commons/5/53/Google_%22G%22_Logo.svg" class="w-5 h-5">
              <span>Log Masuk Google</span>
            </button>
+           <button onclick="switchLoginTab('akp'); document.getElementById('login-category').value='GURU';" class="text-xs text-gray-400 hover:text-gray-600 underline mt-2">
+             Masalah dengan Google? Log Masuk Manual di sini
+           </button>
         </div>
      </div>
      
@@ -477,34 +480,40 @@
         </div><button id="save-config-btn" class="w-full py-3 rounded-xl neu-button-primary font-bold text-white disabled:opacity-50 disabled:cursor-not-allowed" disabled>💾 Simpan Konfigurasi Global</button>
        </div><!-- Control Tab -->
        <div id="tab-control" class="admin-tab-content hidden space-y-6">
+        <div class="flex items-center justify-between mb-2">
+         <h3 class="font-bold text-gray-700">Kawalan Lokasi</h3>
+         <button id="control-lock-btn" class="text-xs font-bold px-3 py-1.5 rounded-lg bg-red-100 text-red-600 flex items-center gap-1 transition-colors hover:bg-red-200">
+          <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"/></svg>
+          TERKUNCI
+         </button>
+        </div>
         <div class="p-4 rounded-xl bg-gray-50 space-y-4">
          <div>
-          <label class="block text-sm font-medium text-gray-600 mb-3">🔐 Geofencing (Keperluan Lokasi)</label>
+          <label class="block text-sm font-medium text-gray-600 mb-3">🔐 Status Geofencing</label>
           <div class="flex items-center gap-4">
            <div class="flex-1">
             <p class="text-sm text-gray-700 font-medium mb-2">Status: <span id="geofence-status-text" class="text-green-600 font-bold">DIMATIKAN</span></p>
-            <p class="text-xs text-gray-500">DIMATIKAN: Benarkan daftar di mana-mana lokasi</p>
-            <p class="text-xs text-gray-500 mt-1">DIHIDUPKAN: Wajib dalam radius sekolah</p>
+            <p class="text-xs text-gray-500">Hidupkan untuk wajib daftar dalam radius.</p>
            </div>
            <div class="flex items-center gap-2">
-            <button id="toggle-geofence" class="relative inline-flex h-10 w-16 items-center rounded-full transition-colors" style="background: #ccc;"> <span id="geofence-toggle-dot" class="inline-block h-8 w-8 transform rounded-full bg-white transition-transform" style="transform: translateX(1px);"></span> </button>
+            <button id="toggle-geofence" class="relative inline-flex h-10 w-16 items-center rounded-full transition-colors disabled:opacity-50 disabled:cursor-not-allowed" style="background: #ccc;" disabled> <span id="geofence-toggle-dot" class="inline-block h-8 w-8 transform rounded-full bg-white transition-transform" style="transform: translateX(1px);"></span> </button>
            </div>
           </div>
          </div>
          <div class="border-t border-gray-200 pt-4">
-          <label class="block text-sm font-medium text-gray-600 mb-2">📏 Radius Geofencing (Meter)</label>
-          <input type="number" id="geofence-radius" class="neu-input" placeholder="200" value="200">
-          <p class="text-xs text-gray-500 mt-1">Jarak maksimum dibenarkan dari pusat sekolah.</p>
+          <label class="block text-sm font-medium text-gray-600 mb-2">⭕ Radius Geofence (Meter)</label>
+          <input type="number" id="geofence-radius" class="neu-input" placeholder="200" disabled>
+          <p class="text-xs text-gray-400 mt-1">Jarak maksimum dibenarkan dari pusat sekolah.</p>
          </div>
          <div class="border-t border-gray-200 pt-4">
           <label class="block text-sm font-medium text-gray-600 mb-2">📍 Koordinat Pusat Sekolah</label>
-          <div class="grid grid-cols-2 gap-3"><input type="number" step="any" id="school-lat" class="neu-input" placeholder="Latitude"> <input type="number" step="any" id="school-lng" class="neu-input" placeholder="Longitude">
-          </div><button id="get-current-location" class="mt-2 text-sm text-blue-600 font-medium">📍 Gunakan Lokasi Semasa</button>
+          <div class="grid grid-cols-2 gap-3"><input type="number" step="any" id="school-lat" class="neu-input" placeholder="Latitude" disabled> <input type="number" step="any" id="school-lng" class="neu-input" placeholder="Longitude" disabled>
+          </div><button id="get-current-location" class="mt-2 text-sm text-blue-600 font-medium disabled:opacity-50 disabled:cursor-not-allowed" disabled>📍 Gunakan Lokasi Semasa</button>
          </div>
          <div class="p-3 rounded-lg bg-blue-50 border border-blue-200">
-          <p class="text-xs text-blue-700"><strong>💡 Info:</strong> Jika Geofencing DIHIDUPKAN, staf hanya boleh daftar masuk dalam radius yang ditetapkan dari koordinat pusat sekolah.</p>
+          <p class="text-xs text-blue-700"><strong>💡 Info:</strong> Geofencing mengehadkan daftar masuk hanya dalam radius yang ditetapkan dari koordinat sekolah.</p>
          </div>
-        </div><button id="save-control-btn" class="w-full py-3 rounded-xl neu-button-primary font-bold text-white">💾 Simpan & Sync Tetapan (Global)</button>
+        </div><button id="save-control-btn" class="w-full py-3 rounded-xl neu-button-primary font-bold text-white disabled:opacity-50 disabled:cursor-not-allowed" disabled>💾 Simpan & Sync Tetapan (Global)</button>
        </div><!-- Docs Tab -->
        <div id="tab-docs" class="admin-tab-content hidden space-y-4 text-sm">
         <div class="p-4 rounded-xl bg-blue-50 border border-blue-200">
@@ -600,6 +609,7 @@
     let currentFilter = 'all';
     let tokenClient;
     let isConfigLocked = true;
+    let isControlLocked = true;
 
     // ==================== UTILITIES ====================
     function generateId() { return Date.now().toString(36) + Math.random().toString(36).substr(2); }
@@ -631,6 +641,7 @@
       const saved = localStorage.getItem('attendance_settings');
       if (saved) settings = { ...settings, ...JSON.parse(saved) };
       if (!settings.deviceId) { settings.deviceId = generateDeviceId(); saveSettings(); }
+      if (!settings.geofenceRadius) settings.geofenceRadius = 200;
     }
     function saveCurrentUser() {
       if (currentUser) localStorage.setItem('current_user', JSON.stringify(currentUser));
@@ -820,8 +831,21 @@
     }
 
     function handleGoogleButtonClick() {
-        if (tokenClient) tokenClient.requestAccessToken({prompt: 'consent select_account'});
-        else if (!settings.googleClientId) showToast('⚠️ Sila tetapkan Google Client ID di Admin', 'warning');
+        if (!window.google || !window.google.accounts) {
+             showToast('❌ Sambungan ke Google gagal. Sila refresh atau guna manual.', 'error');
+             return;
+        }
+        if (!settings.googleClientId) {
+             showToast('⚠️ Admin: Sila tetapkan Google Client ID', 'warning');
+             return;
+        }
+        if (!tokenClient) initGoogleAuth(); 
+        
+        if (tokenClient) {
+             tokenClient.requestAccessToken({prompt: 'consent select_account'});
+        } else {
+             showToast('❌ Ralat inisialisasi Google. Sila guna manual.', 'error');
+        }
     }
 
     function handleLogout() {
@@ -856,8 +880,7 @@
       try {
         if (settings.geofencingEnabled) {
           if (!currentGPS || !settings.schoolLat) throw new Error('Lokasi/GPS diperlukan');
-          const radius = settings.geofenceRadius || 200;
-          if (calculateDistance(currentGPS.lat, currentGPS.lng, settings.schoolLat, settings.schoolLng) > radius) throw new Error(`Di luar kawasan (radius ${radius}m)`);
+          if (calculateDistance(currentGPS.lat, currentGPS.lng, settings.schoolLat, settings.schoolLng) > (settings.geofenceRadius || 200)) throw new Error('Di luar kawasan (radius ' + (settings.geofenceRadius || 200) + 'm)');
         }
 
         const now = new Date();
@@ -940,8 +963,8 @@
              keys.forEach(key => {
                  if (res.data[key] !== undefined && res.data[key] !== settings[key]) {
                      if (key === 'schoolLat' || key === 'schoolLng') settings[key] = parseFloat(res.data[key]);
-                     else if (key === 'geofenceRadius') settings[key] = parseInt(res.data[key]);
                      else if (key === 'geofencingEnabled') settings[key] = String(res.data[key]).toLowerCase() === 'true';
+                     else if (key === 'geofenceRadius') settings[key] = parseInt(res.data[key]) || 200;
                      else settings[key] = res.data[key];
                      changed = true;
                  }
@@ -1016,7 +1039,7 @@
          } else document.getElementById('admin-error').classList.remove('hidden');
       });
       
-      // Admin Config Lock & Save
+      // Admin Config Lock
       document.getElementById('config-lock-btn').addEventListener('click', () => {
          isConfigLocked = !isConfigLocked;
          const btn = document.getElementById('config-lock-btn');
@@ -1024,6 +1047,26 @@
          const saveBtn = document.getElementById('save-config-btn');
          
          if (isConfigLocked) {
+             btn.innerHTML = '<svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"/></svg> TERKUNCI';
+             btn.className = 'text-xs font-bold px-3 py-1.5 rounded-lg bg-red-100 text-red-600 flex items-center gap-1 transition-colors hover:bg-red-200';
+             inputs.forEach(id => document.getElementById(id).disabled = true);
+             saveBtn.disabled = true;
+         } else {
+             btn.innerHTML = '<svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 11V7a4 4 0 118 0m-4 8v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2z"/></svg> NYAHKUNCI';
+             btn.className = 'text-xs font-bold px-3 py-1.5 rounded-lg bg-green-100 text-green-600 flex items-center gap-1 transition-colors hover:bg-green-200';
+             inputs.forEach(id => document.getElementById(id).disabled = false);
+             saveBtn.disabled = false;
+         }
+      });
+
+      // Admin Control Lock
+      document.getElementById('control-lock-btn').addEventListener('click', () => {
+         isControlLocked = !isControlLocked;
+         const btn = document.getElementById('control-lock-btn');
+         const inputs = ['school-lat', 'school-lng', 'geofence-radius', 'get-current-location', 'toggle-geofence'];
+         const saveBtn = document.getElementById('save-control-btn');
+         
+         if (isControlLocked) {
              btn.innerHTML = '<svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"/></svg> TERKUNCI';
              btn.className = 'text-xs font-bold px-3 py-1.5 rounded-lg bg-red-100 text-red-600 flex items-center gap-1 transition-colors hover:bg-red-200';
              inputs.forEach(id => document.getElementById(id).disabled = true);
@@ -1090,7 +1133,6 @@
           document.getElementById('toggle-geofence').style.background = settings.geofencingEnabled ? '#10B981' : '#ccc';
           document.getElementById('geofence-toggle-dot').style.transform = settings.geofencingEnabled ? 'translateX(29px)' : 'translateX(1px)';
           document.getElementById('geofence-status-text').textContent = settings.geofencingEnabled ? 'DIHIDUPKAN' : 'DIMATIKAN';
-          // Note: We don't save immediately here, user must click Save button to confirm
       });
       
       // Tabs
