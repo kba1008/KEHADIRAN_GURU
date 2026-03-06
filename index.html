@@ -273,7 +273,7 @@
        <div class="w-20 h-20 rounded-2xl bg-gradient-to-br from-emerald-400 to-emerald-600 flex items-center justify-center shadow-lg mx-auto mb-4">
          <svg class="w-10 h-10 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
        </div>
-       <h1 class="font-bold text-gray-800 text-2xl">Sistem Kehadiran</h1>
+       <h1 class="font-bold text-gray-800 text-2xl">Sistem Kehadiran V1</h1>
        <p class="text-sm text-gray-500">SK SELAMA (K)</p>
      </div>
      
@@ -338,7 +338,7 @@
          </svg>
         </div>
         <div>
-         <h1 id="app-title" class="font-bold text-gray-800 text-lg">Sistem Kehadiran</h1>
+         <h1 id="app-title" class="font-bold text-gray-800 text-lg">Sistem Kehadiran V1</h1>
          <p id="school-name" class="text-xs text-gray-500">SK SELAMA (K)</p>
         </div>
        </div>
@@ -648,8 +648,10 @@
       else localStorage.removeItem('current_user');
     }
     function loadCurrentUser() {
-      const saved = localStorage.getItem('current_user');
-      if (saved) currentUser = JSON.parse(saved);
+      try {
+        const saved = localStorage.getItem('current_user');
+        if (saved) currentUser = JSON.parse(saved);
+      } catch (e) { localStorage.removeItem('current_user'); }
     }
 
     // ==================== NAVIGATION ====================
@@ -988,6 +990,10 @@
                     gfDot.style.transform = settings.geofencingEnabled ? 'translateX(29px)' : 'translateX(1px)';
                     gfText.textContent = settings.geofencingEnabled ? 'DIHIDUPKAN' : 'DIMATIKAN';
                 }
+
+                // REFRESH APP STATE IMMEDIATELY
+                updateGPSStatus();
+                updateActionButtons();
                 
                 console.log('Global config synced & applied');
                 initGoogleAuth();
@@ -1004,6 +1010,26 @@
       await window.elementSdk?.init({ defaultConfig, onConfigChange: (c) => { document.getElementById('app-title').textContent = c.app_title || defaultConfig.app_title; } });
       await window.dataSdk?.init(dataHandler);
       
+      // Restore Admin Session
+      if (localStorage.getItem('admin_session') === 'true') {
+         document.getElementById('admin-modal').classList.remove('hidden');
+         document.getElementById('admin-password-section').classList.add('hidden');
+         document.getElementById('admin-content').classList.remove('hidden');
+         syncGlobalConfig().then(() => {
+             document.getElementById('gas-url').value = settings.gasUrl || '';
+             document.getElementById('google-client-id').value = settings.googleClientId || '';
+             document.getElementById('school-lat').value = settings.schoolLat || '';
+             document.getElementById('school-lng').value = settings.schoolLng || '';
+             document.getElementById('geofence-radius').value = settings.geofenceRadius || 200;
+             const gfToggle = document.getElementById('toggle-geofence');
+             if(gfToggle) {
+                gfToggle.style.background = settings.geofencingEnabled ? '#10B981' : '#ccc';
+                document.getElementById('geofence-toggle-dot').style.transform = settings.geofencingEnabled ? 'translateX(29px)' : 'translateX(1px)';
+                document.getElementById('geofence-status-text').textContent = settings.geofencingEnabled ? 'DIHIDUPKAN' : 'DIMATIKAN';
+             }
+         });
+      }
+      
       // Event Listeners
       document.getElementById('checkin-btn').addEventListener('click', handleCheckin);
       document.getElementById('checkout-btn').addEventListener('click', handleCheckout);
@@ -1019,13 +1045,19 @@
 
       // Admin
       document.getElementById('admin-btn-login').addEventListener('click', () => document.getElementById('admin-modal').classList.remove('hidden'));
-      document.getElementById('close-admin-modal').addEventListener('click', () => document.getElementById('admin-modal').classList.add('hidden'));
+      document.getElementById('close-admin-modal').addEventListener('click', () => {
+          document.getElementById('admin-modal').classList.add('hidden');
+          localStorage.removeItem('admin_session');
+      });
       document.getElementById('admin-login-btn').addEventListener('click', async () => {
          if (document.getElementById('admin-password').value === ADMIN_PASSWORD) {
+             localStorage.setItem('admin_session', 'true');
              const btn = document.getElementById('admin-login-btn');
+             btn.disabled = true;
              btn.textContent = 'Menyemak Data Cloud...';
              await syncGlobalConfig(); // Pull from Sheet
              btn.textContent = 'Masuk';
+             btn.disabled = false;
              
              document.getElementById('admin-password-section').classList.add('hidden'); document.getElementById('admin-content').classList.remove('hidden');
              // Pre-fill inputs
