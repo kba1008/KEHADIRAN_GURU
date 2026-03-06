@@ -1,4 +1,1377 @@
-// Google Apps Script untuk Sistem Kehadiran
+<!doctype html>
+<html lang="ms" class="h-full">
+ <head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <meta name="theme-color" content="#10B981">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <title>Sistem Kehadiran 3D Elite</title>
+  <script src="https://cdn.tailwindcss.com/3.4.17"></script>
+  <script src="/_sdk/element_sdk.js"></script>
+  <script src="/_sdk/data_sdk.js"></script>
+  <script src="https://accounts.google.com/gsi/client" async defer></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&amp;display=swap" rel="stylesheet">
+  <style>
+    * { font-family: 'Plus Jakarta Sans', sans-serif; }
+    html, body { height: 100%; margin: 0; padding: 0; background: linear-gradient(135deg, #F8F9FA 0%, #E9ECEF 50%, #F8F9FA 100%); }
+    .app-wrapper { height: 100%; width: 100%; overflow-y: auto; overflow-x: hidden; }
+    
+    /* Neumorphic Cards */
+    .neu-card {
+      background: linear-gradient(145deg, #ffffff, #e6e9ec);
+      box-shadow: 20px 20px 60px #c5c8cb, -20px -20px 60px #ffffff;
+      border-radius: 24px;
+      transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+    .neu-card:hover { transform: translateY(-2px); box-shadow: 25px 25px 75px #c5c8cb, -25px -25px 75px #ffffff; }
+    
+    /* Buttons */
+    .neu-button {
+      background: linear-gradient(145deg, #ffffff, #e6e9ec);
+      box-shadow: 8px 8px 20px #c5c8cb, -8px -8px 20px #ffffff;
+      border-radius: 16px;
+      transition: all 0.2s;
+      cursor: pointer;
+      border: none;
+    }
+    .neu-button:active { box-shadow: inset 4px 4px 12px #c5c8cb, inset -4px -4px 12px #ffffff; transform: scale(0.98); }
+    
+    .neu-button-primary {
+      background: linear-gradient(145deg, #10B981, #059669);
+      box-shadow: 8px 8px 20px #c5c8cb, -8px -8px 20px #ffffff;
+      color: white;
+      border: none;
+      cursor: pointer;
+    }
+    .neu-button-primary:active { box-shadow: inset 4px 4px 12px rgba(0,0,0,0.2), inset -4px -4px 12px rgba(255,255,255,0.1); }
+    .neu-button-primary:disabled { opacity: 0.5; cursor: not-allowed; }
+    
+    .neu-button-danger {
+      background: linear-gradient(145deg, #EF4444, #DC2626);
+      box-shadow: 8px 8px 20px #c5c8cb, -8px -8px 20px #ffffff;
+      color: white;
+      border: none;
+      cursor: pointer;
+    }
+    
+    /* Inputs */
+    .neu-input {
+      background: linear-gradient(145deg, #e6e9ec, #ffffff);
+      box-shadow: inset 6px 6px 15px #c5c8cb, inset -6px -6px 15px #ffffff;
+      border-radius: 12px;
+      border: none;
+      outline: none;
+      padding: 12px 16px;
+      width: 100%;
+      font-size: 14px;
+      transition: all 0.2s;
+    }
+    .neu-input:focus { box-shadow: inset 8px 8px 20px #b8bbbe, inset -8px -8px 20px #ffffff; }
+    .neu-input:disabled { background: #e9ecef; color: #9ca3af; box-shadow: none; cursor: not-allowed; }
+
+    .neu-select {
+      background: linear-gradient(145deg, #e6e9ec, #ffffff);
+      box-shadow: inset 6px 6px 15px #c5c8cb, inset -6px -6px 15px #ffffff;
+      border-radius: 12px;
+      border: none;
+      outline: none;
+      appearance: none;
+      cursor: pointer;
+      padding: 12px 16px;
+      width: 100%;
+      font-size: 14px;
+    }
+    
+    /* LED Indicators */
+    .led-3d {
+      width: 16px;
+      height: 16px;
+      border-radius: 50%;
+      position: relative;
+    }
+    .led-3d::before {
+      content: '';
+      position: absolute;
+      top: 2px;
+      left: 2px;
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: rgba(255,255,255,0.8);
+    }
+    
+    .led-green {
+      background: radial-gradient(circle at 30% 30%, #4ade80, #16a34a, #15803d);
+      box-shadow: 0 0 10px #22c55e, 0 0 20px #22c55e80, 0 0 30px #22c55e40, inset 0 -3px 6px rgba(0,0,0,0.3);
+      animation: pulse-green 2s infinite;
+    }
+    .led-red {
+      background: radial-gradient(circle at 30% 30%, #f87171, #dc2626, #b91c1c);
+      box-shadow: 0 0 10px #ef4444, 0 0 20px #ef444480, 0 0 30px #ef444440, inset 0 -3px 6px rgba(0,0,0,0.3);
+      animation: pulse-red 2s infinite;
+    }
+    .led-blue {
+      background: radial-gradient(circle at 30% 30%, #60a5fa, #3b82f6, #2563eb);
+      box-shadow: 0 0 10px #3b82f6, 0 0 20px #3b82f680, 0 0 30px #3b82f640, inset 0 -3px 6px rgba(0,0,0,0.3);
+      animation: pulse-blue 2s infinite;
+    }
+    .led-gray {
+      background: radial-gradient(circle at 30% 30%, #9ca3af, #6b7280, #4b5563);
+      box-shadow: 0 0 5px #6b7280, inset 0 -3px 6px rgba(0,0,0,0.3);
+    }
+    
+    @keyframes pulse-green { 0%, 100% { box-shadow: 0 0 10px #22c55e, 0 0 20px #22c55e80, 0 0 30px #22c55e40, inset 0 -3px 6px rgba(0,0,0,0.3); } 50% { box-shadow: 0 0 15px #22c55e, 0 0 30px #22c55e80, 0 0 45px #22c55e40, inset 0 -3px 6px rgba(0,0,0,0.3); } }
+    @keyframes pulse-red { 0%, 100% { box-shadow: 0 0 10px #ef4444, 0 0 20px #ef444480, 0 0 30px #ef444440, inset 0 -3px 6px rgba(0,0,0,0.3); } 50% { box-shadow: 0 0 15px #ef4444, 0 0 30px #ef444480, 0 0 45px #ef444440, inset 0 -3px 6px rgba(0,0,0,0.3); } }
+    @keyframes pulse-blue { 0%, 100% { box-shadow: 0 0 10px #3b82f6, 0 0 20px #3b82f680, 0 0 30px #3b82f640, inset 0 -3px 6px rgba(0,0,0,0.3); } 50% { box-shadow: 0 0 15px #3b82f6, 0 0 30px #3b82f680, 0 0 45px #3b82f640, inset 0 -3px 6px rgba(0,0,0,0.3); } }
+    
+    /* Floating Button */
+    .floating-btn {
+      position: fixed;
+      bottom: 100px;
+      right: 20px;
+      width: 64px;
+      height: 64px;
+      border-radius: 50%;
+      background: linear-gradient(145deg, #8B5CF6, #7C3AED);
+      box-shadow: 8px 8px 20px #c5c8cb, -8px -8px 20px #ffffff, 0 0 20px #8B5CF680;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      z-index: 1000;
+      transition: all 0.3s;
+      border: none;
+    }
+    .floating-btn:hover { transform: scale(1.1); }
+    
+    /* Modals */
+    .modal-backdrop {
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,0.5);
+      backdrop-filter: blur(4px);
+      z-index: 1500;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 20px;
+    }
+    .modal-backdrop.hidden { display: none; }
+    
+    .modal-content {
+      background: white;
+      border-radius: 24px;
+      max-width: 500px;
+      width: 100%;
+      max-height: 90vh;
+      overflow-y: auto;
+      box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+    }
+    
+    /* Toast */
+    .toast {
+      position: fixed;
+      bottom: 20px;
+      left: 50%;
+      transform: translateX(-50%);
+      padding: 16px 24px;
+      border-radius: 16px;
+      background: #1f2937;
+      color: white;
+      font-weight: 500;
+      z-index: 3000;
+      animation: slide-up 0.3s ease-out;
+    }
+    @keyframes slide-up { from { opacity: 0; transform: translateX(-50%) translateY(20px); } to { opacity: 1; transform: translateX(-50%) translateY(0); } }
+    
+    /* Tab Buttons */
+    .tab-btn {
+      padding: 10px 16px;
+      border-radius: 12px;
+      font-weight: 600;
+      font-size: 13px;
+      transition: all 0.2s;
+      background: transparent;
+      color: #6b7280;
+      border: none;
+      cursor: pointer;
+    }
+    .tab-btn.active {
+      background: linear-gradient(145deg, #ffffff, #e6e9ec);
+      box-shadow: 4px 4px 10px #c5c8cb, -4px -4px 10px #ffffff;
+      color: #1f2937;
+    }
+    
+    /* Record Card */
+    .record-card {
+      background: linear-gradient(145deg, #ffffff, #f1f3f5);
+      box-shadow: 8px 8px 20px #d1d5db, -8px -8px 20px #ffffff;
+      border-radius: 16px;
+      padding: 16px;
+      transition: all 0.2s;
+    }
+    .record-card:hover { transform: translateX(4px); }
+    
+    /* Admin Tab */
+    .admin-tab {
+      padding: 10px 16px;
+      border-radius: 10px;
+      font-size: 14px;
+      font-weight: 600;
+      transition: all 0.2s;
+      background: transparent;
+      color: #6b7280;
+      border: none;
+      cursor: pointer;
+    }
+    .admin-tab.active {
+      background: linear-gradient(145deg, #3b82f6, #2563eb);
+      color: white;
+      box-shadow: 0 4px 12px rgba(59, 130, 246, 0.4);
+    }
+    
+    /* Code Block */
+    .code-block {
+      background: #1e293b;
+      border-radius: 12px;
+      padding: 16px;
+      overflow-x: auto;
+      font-family: 'Courier New', monospace;
+      font-size: 12px;
+      line-height: 1.6;
+      color: #e2e8f0;
+      white-space: pre-wrap;
+      word-break: break-all;
+    }
+    
+    /* Spinner */
+    .spinner {
+      width: 20px;
+      height: 20px;
+      border: 3px solid rgba(255,255,255,0.3);
+      border-top-color: white;
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    
+    /* Scrollbar */
+    ::-webkit-scrollbar { width: 8px; }
+    ::-webkit-scrollbar-track { background: #e6e9ec; border-radius: 4px; }
+    ::-webkit-scrollbar-thumb { background: linear-gradient(180deg, #9ca3af, #6b7280); border-radius: 4px; } /* Fade In */ .animate-fade-in { animation: fadeIn 0.5s ease-out; } @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+  </style>
+  <style>body { box-sizing: border-box; }</style>
+ </head>
+ <body class="h-full">
+  <div class="app-wrapper" id="app">
+   <!-- LOGIN VIEW -->
+   <div id="login-view" class="min-h-full flex flex-col items-center justify-center p-6 hidden">
+     <div class="text-center mb-8">
+       <div class="w-20 h-20 rounded-2xl bg-gradient-to-br from-emerald-400 to-emerald-600 flex items-center justify-center shadow-lg mx-auto mb-4">
+         <svg class="w-10 h-10 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+       </div>
+       <h1 class="font-bold text-gray-800 text-2xl">Sistem Kehadiran V1</h1>
+       <p class="text-sm text-gray-500">SK SELAMA (K)</p>
+     </div>
+     
+     <div class="neu-card p-6 w-full max-w-md">
+        <div class="flex gap-2 mb-6">
+           <button class="flex-1 py-2 rounded-xl text-sm font-bold transition-all bg-emerald-100 text-emerald-700" id="tab-akp" onclick="switchLoginTab('akp')">Log Masuk Manual</button>
+           <button class="flex-1 py-2 rounded-xl text-sm font-bold text-gray-500 hover:bg-gray-100" id="tab-guru" onclick="switchLoginTab('guru')">Log Masuk Google</button>
+        </div>
+
+        <!-- LOGIN: AKP/KEBERSIHAN -->
+        <div id="login-form-akp" class="space-y-4">
+           <div>
+             <label class="block text-xs font-bold text-gray-500 uppercase mb-1">Kategori</label>
+             <select id="login-category" class="neu-select">
+                <option value="GURU">GURU</option>
+                <option value="AKP">AKP</option>
+                <option value="KEBERSIHAN">KEBERSIHAN</option>
+             </select>
+           </div>
+           <div>
+             <label class="block text-xs font-bold text-gray-500 uppercase mb-1">Nama Penuh</label>
+             <input type="text" id="login-name" class="neu-input uppercase" placeholder="MASUKKAN NAMA">
+           </div>
+           <div>
+             <label class="block text-xs font-bold text-gray-500 uppercase mb-1">Kata Laluan</label>
+             <input type="password" id="login-password" class="neu-input" placeholder="••••••••">
+           </div>
+           <button id="btn-login-manual" class="w-full py-3 rounded-xl neu-button-primary font-bold text-white shadow-lg mt-2">LOG MASUK</button>
+        </div>
+
+        <!-- LOGIN: GURU -->
+        <div id="login-form-guru" class="hidden space-y-4 text-center">
+           <p class="text-sm text-gray-500 mb-4">Sila log masuk menggunakan akaun DELIMA atau Google yang sah.</p>
+           <button id="btn-login-google-page" class="w-full py-3 px-4 rounded-xl bg-white border-2 border-gray-200 hover:bg-gray-50 text-gray-700 font-bold flex items-center justify-center gap-3 transition-all">
+             <img src="https://upload.wikimedia.org/wikipedia/commons/5/53/Google_%22G%22_Logo.svg" class="w-5 h-5">
+             <span>Log Masuk Google</span>
+           </button>
+           <button onclick="switchLoginTab('akp'); document.getElementById('login-category').value='GURU';" class="text-xs text-gray-400 hover:text-gray-600 underline mt-2">
+             Masalah dengan Google? Log Masuk Manual di sini
+           </button>
+        </div>
+     </div>
+     
+     <div class="mt-8 text-center">
+       <p class="text-gray-500 text-sm">Belum mendaftar?</p>
+       <button id="btn-goto-register" class="text-emerald-600 font-bold text-sm hover:underline mt-1">Daftar Akaun Baru</button>
+     </div>
+     
+     <div class="mt-8">
+       <button id="admin-btn-login" class="text-gray-400 text-xs font-semibold hover:text-gray-600">MOD ADMIN</button>
+     </div>
+   </div>
+
+   <!-- MAIN CONTENT (DASHBOARD) -->
+   <div id="main-content" class="hidden">
+     <!-- Status Bar -->
+     <div class="sticky top-0 z-50 bg-gradient-to-b from-white/95 to-white/80 backdrop-blur-lg px-4 py-3 border-b border-gray-100">
+      <div class="flex items-center justify-between max-w-lg mx-auto">
+       <div class="flex items-center gap-3">
+        <div class="w-10 h-10 rounded-xl bg-gradient-to-br from-emerald-400 to-emerald-600 flex items-center justify-center shadow-lg">
+         <svg class="w-6 h-6 text-white" fill="none" stroke="currentColor" viewbox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+         </svg>
+        </div>
+        <div>
+         <h1 id="app-title" class="font-bold text-gray-800 text-lg">Sistem Kehadiran V1</h1>
+         <p id="school-name" class="text-xs text-gray-500">SK SELAMA (K)</p>
+        </div>
+       </div>
+       <div class="flex items-center gap-4">
+        <div class="flex items-center gap-2"><span class="text-xs text-gray-500">GPS</span>
+         <div id="gps-led" class="led-3d led-gray"></div>
+        </div>
+        <button id="logout-btn" class="w-10 h-10 rounded-xl neu-button flex items-center justify-center text-red-500" title="Log Keluar">
+         <svg class="w-5 h-5" fill="none" stroke="currentColor" viewbox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" /></svg>
+        </button>
+       </div>
+      </div>
+     </div>
+
+     <div class="px-4 py-6 max-w-lg mx-auto pb-32">
+      <!-- Date & Time -->
+      <div class="text-center mb-6">
+       <p id="current-date" class="text-2xl font-bold text-gray-800"></p>
+       <p id="current-time" class="text-4xl font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-emerald-500 to-teal-600"></p>
+      </div>
+
+      <!-- User Profile Card -->
+      <div class="neu-card p-6 mb-6 flex items-center justify-between border-l-4 border-emerald-500">
+         <div>
+            <p class="text-xs text-gray-500 font-bold uppercase tracking-wider">Selamat Datang</p>
+            <h2 id="user-display-name" class="text-lg font-bold text-gray-800 mt-1">-</h2>
+            <span id="user-display-role" class="inline-block mt-2 px-2 py-1 bg-emerald-100 text-emerald-700 text-xs font-bold rounded-lg">-</span>
+            <p id="user-display-email" class="text-xs text-gray-500 mt-1">-</p>
+         </div>
+         <img id="user-display-avatar" src="" class="w-12 h-12 rounded-full border-2 border-white shadow-md bg-gray-200">
+      </div>
+
+      <!-- Action Card -->
+      <div class="neu-card p-6 mb-6">
+       <h2 class="text-lg font-bold text-gray-800 mb-4 flex items-center gap-2">
+        <svg class="w-5 h-5 text-emerald-500" fill="none" stroke="currentColor" viewbox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 16l-4-4m0 0l4-4m-4 4h14m-5 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h7a3 3 0 013 3v1" />
+        </svg> Daftar Kehadiran</h2>
+
+       <!-- GPS Status -->
+       <div id="gps-status" class="mb-4 p-4 rounded-xl bg-gray-50">
+        <div class="flex items-center justify-between">
+         <div class="flex items-center gap-2">
+          <svg class="w-5 h-5 text-gray-500" fill="none" stroke="currentColor" viewbox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" /> <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
+          </svg><span class="text-sm font-medium text-gray-600">Status Lokasi</span>
+         </div><span id="gps-status-text" class="text-sm font-semibold text-gray-400">Menunggu GPS...</span>
+        </div>
+        <p id="gps-coords" class="text-xs text-gray-400 mt-2 font-mono"></p>
+       </div>
+       
+       <!-- Action Buttons -->
+       <div class="grid grid-cols-2 gap-4"><button id="checkin-btn" class="neu-button-primary py-4 rounded-xl font-bold text-white flex items-center justify-center gap-2" disabled>
+         <svg class="w-5 h-5" fill="none" stroke="currentColor" viewbox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 16l-4-4m0 0l4-4m-4 4h14m-5 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h7a3 3 0 013 3v1" />
+         </svg> MASUK </button> <button id="checkout-btn" class="neu-button-danger py-4 rounded-xl font-bold text-white flex items-center justify-center gap-2" disabled>
+         <svg class="w-5 h-5" fill="none" stroke="currentColor" viewbox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
+         </svg> KELUAR </button>
+       </div>
+      </div>
+      
+      <!-- Today's Records -->
+      <div class="neu-card p-6">
+       <div class="flex items-center justify-between mb-4">
+        <h2 class="text-lg font-bold text-gray-800 flex items-center gap-2">
+         <svg class="w-5 h-5 text-emerald-500" fill="none" stroke="currentColor" viewbox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
+         </svg> Rekod Hari Ini</h2><span id="record-count" class="px-3 py-1 rounded-full bg-emerald-100 text-emerald-700 text-sm font-bold">0</span>
+       </div><!-- Filter Tabs -->
+       <div class="flex gap-2 mb-4 overflow-x-auto pb-2"><button class="tab-btn active" data-filter="all">Semua</button> <button class="tab-btn" data-filter="GURU">Guru</button> <button class="tab-btn" data-filter="AKP">AKP</button> <button class="tab-btn" data-filter="KEBERSIHAN">Kebersihan</button> <button class="tab-btn" data-filter="PELAWAT">Pelawat</button>
+       </div><!-- Records List -->
+       <div id="records-list" class="space-y-3 max-h-96 overflow-y-auto">
+        <p class="text-center text-gray-400 py-8">Tiada rekod untuk hari ini</p>
+       </div>
+      </div>
+     </div>
+     
+     <!-- Floating Visitor Button --> 
+     <button id="visitor-fab" class="floating-btn" title="Daftar Pelawat">
+      <svg class="w-8 h-8 text-white" fill="none" stroke="currentColor" viewbox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M18 9v3m0 0v3m0-3h3m-3 0h-3m-2-5a4 4 0 11-8 0 4 4 0 018 0zM3 20a6 6 0 0112 0v1H3v-1z" />
+      </svg></button>
+   </div>
+
+   <!-- Visitor Modal -->
+   <div id="visitor-modal" class="modal-backdrop hidden">
+    <div class="modal-content">
+     <div class="p-6 border-b border-gray-100">
+      <div class="flex items-center justify-between">
+       <h2 class="text-xl font-bold text-gray-800">👤 Daftar Pelawat</h2><button id="close-visitor-modal" class="w-10 h-10 rounded-xl neu-button flex items-center justify-center" title="Tutup">
+        <svg class="w-5 h-5 text-gray-600" fill="none" stroke="currentColor" viewbox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+        </svg></button>
+      </div>
+     </div>
+     <div class="p-6 space-y-4">
+      <div class="p-3 rounded-lg bg-blue-50 border border-blue-200">
+       <p class="text-xs text-blue-700"><strong>💡 Petua:</strong> Isi sekurang-kurangnya satu butir maklumat untuk daftar pelawat</p>
+      </div>
+      <div><label class="block text-sm font-medium text-gray-600 mb-2">Nama Pelawat</label> <input type="text" id="visitor-name" class="neu-input uppercase" placeholder="MASUKKAN NAMA PELAWAT">
+      </div>
+      <div><label class="block text-sm font-medium text-gray-600 mb-2">Tujuan Lawatan</label> <input type="text" id="visitor-purpose" class="neu-input" placeholder="Cth: Mesyuarat, Penghantaran">
+      </div><button id="submit-visitor-btn" class="w-full py-4 rounded-xl neu-button-primary font-bold text-white flex items-center justify-center gap-2" disabled>
+       <svg class="w-5 h-5" fill="none" stroke="currentColor" viewbox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />
+       </svg> Daftar Pelawat </button>
+     </div>
+    </div>
+   </div>
+
+   <!-- Admin Modal -->
+   <div id="admin-modal" class="modal-backdrop hidden">
+    <div class="modal-content"><!-- Header -->
+     <div class="p-6 border-b border-gray-100">
+      <div class="flex items-center justify-between">
+       <h2 class="text-xl font-bold text-gray-800 flex items-center gap-2">
+        <svg class="w-6 h-6 text-blue-500" fill="none" stroke="currentColor" viewbox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" /> <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+        </svg> Mod Admin</h2><button id="close-admin-modal" class="w-10 h-10 rounded-xl neu-button flex items-center justify-center" title="Tutup">
+        <svg class="w-5 h-5 text-gray-600" fill="none" stroke="currentColor" viewbox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+        </svg></button>
+      </div>
+     </div><!-- Password Section -->
+     <div id="admin-password-section" class="p-6"><label class="block text-sm font-medium text-gray-600 mb-2">Kata Laluan Admin</label> <input type="password" id="admin-password" class="neu-input text-center text-2xl tracking-widest" placeholder="••••••"> <button id="admin-login-btn" class="w-full mt-4 py-3 rounded-xl neu-button-primary font-bold text-white">Masuk</button>
+      <p id="admin-error" class="hidden mt-2 text-center text-red-500 text-sm">Kata laluan salah</p>
+     </div><!-- Admin Content -->
+     <div id="admin-content" class="hidden"><!-- Tabs -->
+      <div class="px-6 py-3 border-b border-gray-100 flex gap-2 overflow-x-auto"><button class="admin-tab active" data-tab="config">☁️ Konfigurasi</button> <button class="admin-tab" data-tab="control">⚙️ Kawalan</button> <button class="admin-tab" data-tab="docs">📚 Dokumentasi</button>
+      </div><!-- Content -->
+      <div class="p-6 overflow-y-auto max-h-[calc(90vh-200px)]"><!-- Config Tab -->
+       <div id="tab-config" class="admin-tab-content space-y-4">
+        <div class="flex items-center justify-between mb-2">
+          <h3 class="font-bold text-gray-700">Tetapan Sambungan</h3>
+          <button id="config-lock-btn" class="text-xs font-bold px-3 py-1.5 rounded-lg bg-red-100 text-red-600 flex items-center gap-1 transition-colors hover:bg-red-200">
+            <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"/></svg>
+            TERKUNCI
+          </button>
+        </div>
+        <div class="p-3 bg-yellow-50 border border-yellow-200 rounded-lg">
+          <p class="text-xs text-yellow-800">⚠️ <strong>Perhatian:</strong> Apabila anda menyimpan tetapan, ia akan dikemaskini secara global untuk semua pengguna yang menggunakan URL Apps Script yang sama.</p>
+        </div>
+        <div><label class="block text-sm font-medium text-gray-600 mb-2">Google Apps Script URL</label> <input type="url" id="gas-url" class="neu-input text-sm" placeholder="https://script.google.com/macros/s/..." disabled>
+         <p class="text-xs text-gray-400 mt-1">URL deployment untuk integrasi Google Sheet &amp; Drive</p>
+        </div>
+        <div><label class="block text-sm font-medium text-gray-600 mb-2">Google Client ID</label> <input type="text" id="google-client-id" class="neu-input text-sm" placeholder="xxxxx.apps.googleusercontent.com" disabled>
+         <p class="text-xs text-gray-400 mt-1">Untuk login Google</p>
+        </div><button id="save-config-btn" class="w-full py-3 rounded-xl neu-button-primary font-bold text-white disabled:opacity-50 disabled:cursor-not-allowed" disabled>💾 Simpan Konfigurasi Global</button>
+       </div><!-- Control Tab -->
+       <div id="tab-control" class="admin-tab-content hidden space-y-6">
+        <div class="flex items-center justify-between mb-2">
+         <h3 class="font-bold text-gray-700">Kawalan Lokasi</h3>
+         <button id="control-lock-btn" class="text-xs font-bold px-3 py-1.5 rounded-lg bg-red-100 text-red-600 flex items-center gap-1 transition-colors hover:bg-red-200">
+          <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"/></svg>
+          TERKUNCI
+         </button>
+        </div>
+        <div class="p-4 rounded-xl bg-gray-50 space-y-4">
+         <div>
+          <label class="block text-sm font-medium text-gray-600 mb-3">🔐 Status Geofencing</label>
+          <div class="flex items-center gap-4">
+           <div class="flex-1">
+            <p class="text-sm text-gray-700 font-medium mb-2">Status: <span id="geofence-status-text" class="text-green-600 font-bold">DIMATIKAN</span></p>
+            <p class="text-xs text-gray-500">Hidupkan untuk wajib daftar dalam radius.</p>
+           </div>
+           <div class="flex items-center gap-2">
+            <button id="toggle-geofence" class="relative inline-flex h-10 w-16 items-center rounded-full transition-colors disabled:opacity-50 disabled:cursor-not-allowed" style="background: #ccc;" disabled> <span id="geofence-toggle-dot" class="inline-block h-8 w-8 transform rounded-full bg-white transition-transform" style="transform: translateX(1px);"></span> </button>
+           </div>
+          </div>
+         </div>
+         <div class="border-t border-gray-200 pt-4">
+          <label class="block text-sm font-medium text-gray-600 mb-2">⭕ Radius Geofence (Meter)</label>
+          <input type="number" id="geofence-radius" class="neu-input" placeholder="200" disabled>
+          <p class="text-xs text-gray-400 mt-1">Jarak maksimum dibenarkan dari pusat sekolah.</p>
+         </div>
+         <div class="border-t border-gray-200 pt-4">
+          <label class="block text-sm font-medium text-gray-600 mb-2">📍 Koordinat Pusat Sekolah</label>
+          <div class="grid grid-cols-2 gap-3"><input type="number" step="any" id="school-lat" class="neu-input" placeholder="Latitude" disabled> <input type="number" step="any" id="school-lng" class="neu-input" placeholder="Longitude" disabled>
+          </div><button id="get-current-location" class="mt-2 text-sm text-blue-600 font-medium disabled:opacity-50 disabled:cursor-not-allowed" disabled>📍 Gunakan Lokasi Semasa</button>
+         </div>
+         <div class="p-3 rounded-lg bg-blue-50 border border-blue-200">
+          <p class="text-xs text-blue-700"><strong>💡 Info:</strong> Geofencing mengehadkan daftar masuk hanya dalam radius yang ditetapkan dari koordinat sekolah.</p>
+         </div>
+        </div><button id="save-control-btn" class="w-full py-3 rounded-xl neu-button-primary font-bold text-white disabled:opacity-50 disabled:cursor-not-allowed" disabled>💾 Simpan & Sync Tetapan (Global)</button>
+       </div><!-- Docs Tab -->
+       <div id="tab-docs" class="admin-tab-content hidden space-y-4 text-sm">
+        <div class="p-4 rounded-xl bg-blue-50 border border-blue-200">
+         <h3 class="font-bold text-blue-800 mb-2">📖 Panduan Pemasangan Lengkap</h3>
+         <p class="text-blue-700 text-xs">4 komponen penting untuk sistem lengkap</p>
+        </div><!-- Google Client ID -->
+        <div class="space-y-2">
+         <div class="flex items-center justify-between">
+          <h3 class="font-bold text-gray-800">1️⃣ Google Client ID (DELIMA)</h3><button class="text-blue-600 font-semibold text-xs hover:text-blue-800" onclick="copyCode('googleClientId')">📋 Salin</button>
+         </div>
+         <div class="code-block text-xs overflow-auto max-h-40">
+          // NEW: Google Identity Services (GIS) // 1. Google Cloud Console &gt; APIs &amp; Services &gt; Credentials // 2. Create OAuth Client ID (Web Application) // 3. Add Authorized Origin: your domain (e.g., https://your-app.com) // 4. Add Authorized Redirect URI: https://your-app.com // 5. Copy Client ID const GOOGLE_CLIENT_ID = "YOUR_CLIENT_ID.apps.googleusercontent.com";
+         </div>
+        </div><!-- manifest.json -->
+        <div class="space-y-2">
+         <div class="flex items-center justify-between">
+          <h3 class="font-bold text-gray-800">2️⃣ manifest.json (PWA)</h3><button class="text-blue-600 font-semibold text-xs hover:text-blue-800" onclick="copyCode('manifest')">📋 Salin</button>
+         </div>
+         <div class="code-block text-xs overflow-auto max-h-40">
+          { "name": "Sistem Kehadiran 3D Elite", "display": "standalone", "theme_color": "#10B981" }
+         </div>
+        </div><!-- Service Worker -->
+        <div class="space-y-2">
+         <div class="flex items-center justify-between">
+          <h3 class="font-bold text-gray-800">3️⃣ sw.js (Service Worker)</h3><button class="text-blue-600 font-semibold text-xs hover:text-blue-800" onclick="copyCode('sw')">📋 Salin</button>
+         </div>
+         <div class="code-block text-xs overflow-auto max-h-40">
+          // Offline support &amp; caching const CACHE_NAME = 'kehadiran-v1'; self.addEventListener('install', (e) =&gt; { e.waitUntil(caches.open(CACHE_NAME)); });
+         </div>
+        </div><!-- Apps Script -->
+        <div class="space-y-2">
+         <div class="flex items-center justify-between">
+          <h3 class="font-bold text-gray-800">4️⃣ Code.gs (Google Apps Script)</h3><button class="text-blue-600 font-semibold text-xs hover:text-blue-800" onclick="copyCode('appsScript')">📋 Salin</button>
+         </div>
+         <div class="code-block text-xs overflow-auto max-h-40">
+          // Google Apps Script untuk backend const SPREADSHEET_ID = 'YOUR_SPREADSHEET_ID'; const DRIVE_FOLDER_ID = 'YOUR_FOLDER_ID'; function doPost(e) { const data = JSON.parse(e.postData.contents); // Proses data... }
+         </div>
+        </div><!-- Setup Instructions -->
+        <div class="p-4 rounded-xl bg-green-50 border border-green-200 space-y-2">
+         <h3 class="font-bold text-green-800">✅ Langkah Setup</h3>
+         <ol class="text-green-700 text-xs space-y-1 list-decimal list-inside">
+          <li>Register Google Project &amp; dapatkan Client ID</li>
+          <li>Buat Google Sheet &amp; Drive folder</li>
+          <li>Deploy Code.gs di Google Apps Script</li>
+          <li>Tetapkan Google Client ID di Konfigurasi tab</li>
+          <li>Uji dengan "Daftar Masuk"</li>
+         </ol>
+        </div>
+       </div>
+      </div>
+     </div>
+    </div>
+   </div>
+   
+   <!-- Registration Modal -->
+   <div id="registration-modal" class="modal-backdrop hidden">
+    <div class="modal-content">
+     <div class="p-6 border-b border-gray-100">
+      <div class="flex items-center justify-between">
+       <h2 class="text-xl font-bold text-gray-800">📝 Pendaftaran Baru</h2><button id="close-reg-modal" class="w-10 h-10 rounded-xl neu-button flex items-center justify-center" title="Tutup">
+        <svg class="w-5 h-5 text-gray-600" fill="none" stroke="currentColor" viewbox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+        </svg></button>
+      </div>
+     </div>
+     <div class="p-6 space-y-4">
+      <div><label class="block text-sm font-medium text-gray-600 mb-2">Nama Penuh</label> <input type="text" id="reg-name" class="neu-input uppercase" placeholder="MASUKKAN NAMA PENUH">
+      </div>
+      <div><label class="block text-sm font-medium text-gray-600 mb-2">Kategori Staf</label> <select id="reg-category" class="neu-select"> <option value="">-- Pilih Kategori --</option> <option value="GURU">👨‍🏫 GURU</option> <option value="AKP">👔 AKP</option> <option value="KEBERSIHAN">🧹 KEBERSIHAN</option> </select>
+      </div>
+      <div id="reg-email-container" class="hidden"><label class="block text-sm font-medium text-gray-600 mb-2">Alamat Emel (DELIMA/Google)</label> <input type="email" id="reg-email" class="neu-input" placeholder="nama@moe-dl.edu.my">
+      </div>
+      <div><label class="block text-sm font-medium text-gray-600 mb-2">Kata Laluan</label> <input type="password" id="reg-password" class="neu-input" placeholder="••••••••">
+      </div><button id="submit-reg-btn" class="w-full py-4 rounded-xl neu-button-primary font-bold text-white flex items-center justify-center gap-2">
+       <svg class="w-5 h-5" fill="none" stroke="currentColor" viewbox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M18 9v3m0 0v3m0-3h3m-3 0h-3m-2-5a4 4 0 11-8 0 4 4 0 018 0zM3 20a6 6 0 0112 0v1H3v-1z" />
+       </svg> Daftar Akaun </button>
+     </div>
+    </div>
+   </div><!-- Toast Container -->
+   <div id="toast-container"></div>
+  </div>
+  <script>
+    // ==================== CODE STORAGE & CONFIG ====================
+    const ADMIN_PASSWORD = '101010';
+    const GAS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbxFvwcdkelyTX6gMQBDpAlnk01RLfNs89DztoBqdc9nDvAfemc4bAYhlH-AJpnvtz00vw/exec'; // MASUKKAN URL GOOGLE APPS SCRIPT (DEPLOYMENT) DI SINI
+    const defaultConfig = { app_title: 'Sistem Kehadiran 3D Elite', school_name: 'SK SELAMA (K)' };
+
+    // ==================== STATE ====================
+    let settings = { gasUrl: GAS_SCRIPT_URL, googleClientId: '', schoolLat: 0, schoolLng: 0, deviceId: '', geofencingEnabled: false, geofenceRadius: 200 };
+    let currentUser = null;
+    let currentGPS = null;
+    let isOnline = navigator.onLine;
+    let isWithinGeofence = false;
+    let todayRecords = [];
+    let currentFilter = 'all';
+    let tokenClient;
+    let isConfigLocked = true;
+    let isControlLocked = true;
+
+    // ==================== UTILITIES ====================
+    function generateId() { return Date.now().toString(36) + Math.random().toString(36).substr(2); }
+    function generateDeviceId() {
+      const nav = navigator, screen = window.screen;
+      const data = [nav.userAgent, nav.language, screen.width, screen.height].join('|');
+      let hash = 0;
+      for (let i = 0; i < data.length; i++) { const char = data.charCodeAt(i); hash = ((hash << 5) - hash) + char; hash = hash & hash; }
+      return 'DEV' + Math.abs(hash).toString(36).toUpperCase();
+    }
+    function formatDate(d) { return d.toLocaleDateString('ms-MY', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' }); }
+    function formatTime(d) { return d.toLocaleTimeString('ms-MY', { hour: 'numeric', minute: '2-digit', second: '2-digit', hour12: true }); }
+    function getTodayDateString() { return new Date().toISOString().split('T')[0]; }
+    function showToast(msg, type = 'info') {
+      const container = document.getElementById('toast-container');
+      const toast = document.createElement('div'); toast.className = 'toast'; toast.textContent = msg;
+      container.appendChild(toast); setTimeout(() => toast.remove(), 3000);
+    }
+    function calculateDistance(lat1, lon1, lat2, lon2) {
+      const R = 6371e3, φ1 = lat1 * Math.PI / 180, φ2 = lat2 * Math.PI / 180;
+      const Δφ = (lat2 - lat1) * Math.PI / 180, Δλ = (lon2 - lon1) * Math.PI / 180;
+      const a = Math.sin(Δφ/2) * Math.sin(Δφ/2) + Math.cos(φ1) * Math.cos(φ2) * Math.sin(Δλ/2) * Math.sin(Δλ/2);
+      return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+    }
+
+    // ==================== STORAGE ====================
+    function saveSettings() { localStorage.setItem('attendance_settings', JSON.stringify(settings)); }
+    function loadSettings() {
+      const saved = localStorage.getItem('attendance_settings');
+      if (saved) settings = { ...settings, ...JSON.parse(saved) };
+      if (!settings.gasUrl && GAS_SCRIPT_URL) settings.gasUrl = GAS_SCRIPT_URL; // Guna hardcoded jika tiada di local storage
+      if (!settings.deviceId) { settings.deviceId = generateDeviceId(); saveSettings(); }
+      if (!settings.geofenceRadius) settings.geofenceRadius = 200;
+    }
+    function saveCurrentUser() {
+      if (currentUser) localStorage.setItem('current_user', JSON.stringify(currentUser));
+      else localStorage.removeItem('current_user');
+    }
+    function loadCurrentUser() {
+      try {
+        const saved = localStorage.getItem('current_user');
+        if (saved) currentUser = JSON.parse(saved);
+      } catch (e) { localStorage.removeItem('current_user'); }
+    }
+
+    // ==================== NAVIGATION ====================
+    function switchLoginTab(type) {
+        const akpBtn = document.getElementById('tab-akp');
+        const guruBtn = document.getElementById('tab-guru');
+        const akpForm = document.getElementById('login-form-akp');
+        const guruForm = document.getElementById('login-form-guru');
+
+        if (type === 'akp') {
+            akpBtn.classList.add('bg-emerald-100', 'text-emerald-700'); akpBtn.classList.remove('text-gray-500', 'hover:bg-gray-100');
+            guruBtn.classList.remove('bg-emerald-100', 'text-emerald-700'); guruBtn.classList.add('text-gray-500', 'hover:bg-gray-100');
+            akpForm.classList.remove('hidden'); guruForm.classList.add('hidden');
+        } else {
+            guruBtn.classList.add('bg-emerald-100', 'text-emerald-700'); guruBtn.classList.remove('text-gray-500', 'hover:bg-gray-100');
+            akpBtn.classList.remove('bg-emerald-100', 'text-emerald-700'); akpBtn.classList.add('text-gray-500', 'hover:bg-gray-100');
+            guruForm.classList.remove('hidden'); akpForm.classList.add('hidden');
+        }
+    }
+
+    function updateUIState() {
+        const loginView = document.getElementById('login-view');
+        const mainContent = document.getElementById('main-content');
+        
+        if (currentUser) {
+            loginView.classList.add('hidden');
+            mainContent.classList.remove('hidden');
+            document.getElementById('user-display-name').textContent = currentUser.name;
+            document.getElementById('user-display-role').textContent = currentUser.category || 'PENGGUNA';
+            if(document.getElementById('user-display-email')) document.getElementById('user-display-email').textContent = currentUser.email || '-';
+            document.getElementById('user-display-avatar').src = currentUser.imageUrl || 'https://ui-avatars.com/api/?name=' + currentUser.name + '&background=10B981&color=fff';
+            updateActionButtons();
+        } else {
+            loginView.classList.remove('hidden');
+            mainContent.classList.add('hidden');
+        }
+    }
+
+    // ==================== GPS ====================
+    function initGPS() {
+      if ('geolocation' in navigator) {
+        navigator.geolocation.watchPosition(
+          (pos) => {
+            currentGPS = { lat: pos.coords.latitude, lng: pos.coords.longitude, accuracy: pos.coords.accuracy };
+            updateGPSStatus();
+          },
+          (err) => {
+            console.error('GPS Error:', err);
+            document.getElementById('gps-led').className = 'led-3d led-red';
+            document.getElementById('gps-status-text').textContent = 'GPS Tidak Tersedia';
+          },
+          { enableHighAccuracy: true, maximumAge: 10000, timeout: 15000 }
+        );
+      }
+    }
+
+    function updateGPSStatus() {
+      const led = document.getElementById('gps-led'), text = document.getElementById('gps-status-text'), coords = document.getElementById('gps-coords');
+      if (!currentGPS) { led.className = 'led-3d led-gray'; text.textContent = 'Menunggu GPS...'; return; }
+      coords.textContent = `${currentGPS.lat.toFixed(6)}, ${currentGPS.lng.toFixed(6)} (±${Math.round(currentGPS.accuracy)}m)`;
+      
+      if (settings.schoolLat && settings.schoolLng) {
+        const dist = calculateDistance(currentGPS.lat, currentGPS.lng, settings.schoolLat, settings.schoolLng);
+        const radius = settings.geofenceRadius || 200;
+        isWithinGeofence = dist <= radius;
+        led.className = isWithinGeofence ? 'led-3d led-green' : 'led-3d led-red';
+        text.textContent = isWithinGeofence ? `Dalam Zon (${Math.round(dist)}m)` : `Luar Zon (${Math.round(dist)}m)`;
+      } else {
+        led.className = 'led-3d led-blue'; text.textContent = 'Koordinat belum ditetapkan';
+      }
+      updateActionButtons();
+    }
+
+    // ==================== DATA & API ====================
+    async function callAppsScript(action, payload) {
+      if (!settings.gasUrl) throw new Error('URL Google Apps Script belum ditetapkan');
+      return fetch(settings.gasUrl, {
+         method: 'POST', redirect: 'follow',
+         headers: { "Content-Type": "text/plain;charset=utf-8" },
+         body: JSON.stringify({ action, ...payload })
+      }).then(res => res.json()).catch(err => { throw new Error("Gagal menghubungi server: " + err.message); });
+    }
+
+    const dataHandler = {
+      onDataChanged(data) {
+        const today = getTodayDateString();
+        todayRecords = data.filter(r => r.tarikh === today);
+        renderRecords();
+        document.getElementById('record-count').textContent = todayRecords.length;
+        updateActionButtons();
+      }
+    };
+
+    function renderRecords() {
+      const list = document.getElementById('records-list');
+      let filtered = todayRecords;
+      if (currentFilter !== 'all') filtered = todayRecords.filter(r => r.kategori === currentFilter || (currentFilter === 'PELAWAT' && r.isPelawat));
+      
+      if (filtered.length === 0) { list.innerHTML = '<p class="text-center text-gray-400 py-8">Tiada rekod untuk hari ini</p>'; return; }
+      
+      list.innerHTML = filtered.map(r => `
+        <div class="record-card">
+          <div class="flex items-start justify-between gap-3">
+            <div class="flex-1">
+              <div class="flex items-center gap-2 mb-1">
+                <span class="px-2 py-0.5 rounded-full text-xs font-bold ${r.kategori === 'GURU' ? 'bg-blue-100 text-blue-700' : r.kategori === 'AKP' ? 'bg-purple-100 text-purple-700' : r.kategori === 'KEBERSIHAN' ? 'bg-orange-100 text-orange-700' : 'bg-pink-100 text-pink-700'}">${r.kategori}</span>
+              </div>
+              <p class="font-bold text-gray-800">${r.nama}</p>
+              <div class="flex items-center gap-3 mt-2 text-sm">
+                <span class="text-green-600 font-medium">⏰ ${r.waktuMasuk || '-'}</span>
+                ${r.waktuKeluar ? `<span class="text-red-500 font-medium">🚪 ${r.waktuKeluar}</span>` : '<span class="text-gray-400">Belum keluar</span>'}
+              </div>
+            </div>
+          </div>
+        </div>`).join('');
+    }
+
+    // ==================== AUTHENTICATION ====================
+    async function handleManualLogin() {
+        const categorySelect = document.getElementById('login-category');
+        const selectedCategory = categorySelect ? categorySelect.value : '';
+        const name = document.getElementById('login-name').value.trim();
+        const pass = document.getElementById('login-password').value.trim();
+        const btn = document.getElementById('btn-login-manual');
+        
+        // FORCE SYNC BEFORE LOGIN
+        await syncGlobalConfig();
+
+        if (!name || !pass) return showToast('⚠️ Sila isi nama dan kata laluan', 'error');
+        if (!settings.gasUrl) return showToast('⚠️ URL Sistem belum ditetapkan (Admin)', 'error');
+
+        btn.disabled = true; btn.textContent = 'Memproses...';
+        try {
+            const res = await callAppsScript('validateUser', { nama: name, password: pass });
+            // Fix: AppsScript returns flattened object for validateUser, not nested in data property
+            const userData = res.data || res; 
+            if (res.success) {
+                if (selectedCategory && userData.kategori !== selectedCategory) {
+                    showToast(`⚠️ Kategori salah. Anda berdaftar sebagai ${userData.kategori}`, 'warning');
+                }
+                currentUser = { name: userData.nama, category: userData.kategori, email: userData.email || '' };
+                saveCurrentUser();
+                updateUIState();
+                showToast(`✅ Selamat Datang, ${currentUser.name}`, 'success');
+            } else {
+                showToast('❌ Log masuk gagal: ' + (res.message || 'Data salah'), 'error');
+            }
+        } catch (e) {
+            showToast('❌ Ralat: ' + e.message, 'error');
+        }
+        btn.disabled = false; btn.textContent = 'LOG MASUK';
+    }
+
+    function initGoogleAuth() {
+      if (settings.googleClientId && window.google) {
+        try {
+          tokenClient = google.accounts.oauth2.initTokenClient({
+            client_id: settings.googleClientId,
+            scope: 'https://www.googleapis.com/auth/userinfo.email https://www.googleapis.com/auth/userinfo.profile',
+            prompt: 'consent select_account',
+            callback: (res) => { if (res.access_token) fetchUserProfile(res.access_token); },
+          });
+        } catch (e) { console.error('Google Auth Init Error:', e); }
+      }
+    }
+
+    async function fetchUserProfile(token) {
+        try {
+            const profile = await fetch('https://www.googleapis.com/oauth2/v3/userinfo', { headers: { Authorization: `Bearer ${token}` } }).then(r => r.json());
+            if (settings.gasUrl) {
+                const validRes = await callAppsScript('validateUser', { email: profile.email });
+                if (!validRes.success) { showToast('❌ Akaun Google ini belum didaftarkan.', 'error'); return; }
+                const userData = validRes.data || validRes;
+                currentUser = { name: userData.nama, category: userData.kategori, email: profile.email, imageUrl: profile.picture };
+            } else {
+                 currentUser = { name: profile.name, category: 'GURU', email: profile.email, imageUrl: profile.picture };
+            }
+            saveCurrentUser();
+            updateUIState();
+            showToast('✅ Log masuk berjaya!', 'success');
+        } catch (e) { showToast('❌ Gagal log masuk Google', 'error'); }
+    }
+
+    async function handleGoogleButtonClick() {
+        // FORCE SYNC BEFORE GOOGLE AUTH
+        await syncGlobalConfig();
+        
+        if (!window.google || !window.google.accounts) {
+             showToast('❌ Sambungan ke Google gagal. Sila refresh atau guna manual.', 'error');
+             return;
+        }
+        if (!settings.googleClientId) {
+             showToast('⚠️ Admin: Sila tetapkan Google Client ID', 'warning');
+             return;
+        }
+        if (!tokenClient) initGoogleAuth(); 
+        
+        if (tokenClient) {
+             tokenClient.requestAccessToken({prompt: 'consent select_account'});
+        }
+        else {
+             showToast('❌ Ralat inisialisasi Google. Sila guna manual.', 'error');
+        }
+    }
+
+    function handleLogout() {
+        currentUser = null;
+        saveCurrentUser();
+        updateUIState();
+        showToast('Info: Log Keluar Berjaya', 'info');
+    }
+
+    // ==================== ATTENDANCE LOGIC ====================
+    function updateActionButtons() {
+      const checkinBtn = document.getElementById('checkin-btn');
+      const checkoutBtn = document.getElementById('checkout-btn');
+      
+      if (!currentUser) return;
+      
+      const hasActive = hasActiveCheckin();
+      checkinBtn.disabled = hasActive;
+      checkoutBtn.disabled = !hasActive;
+    }
+
+    function hasActiveCheckin() {
+      if (!currentUser) return false;
+      const today = getTodayDateString();
+      return todayRecords.some(r => r.tarikh === today && r.nama === currentUser.name && r.waktuMasuk && !r.waktuKeluar);
+    }
+
+    async function handleCheckin() {
+      const btn = document.getElementById('checkin-btn');
+      btn.disabled = true; btn.innerHTML = '<div class="spinner"></div>';
+
+      try {
+        // FORCE SYNC BEFORE CHECKIN TO GET LATEST GEOFENCE/RADIUS
+        await syncGlobalConfig();
+
+        if (settings.geofencingEnabled) {
+          if (!currentGPS || !settings.schoolLat) throw new Error('Lokasi/GPS diperlukan');
+          if (calculateDistance(currentGPS.lat, currentGPS.lng, settings.schoolLat, settings.schoolLng) > (settings.geofenceRadius || 200)) throw new Error('Di luar kawasan (radius ' + (settings.geofenceRadius || 200) + 'm)');
+        }
+
+        const now = new Date();
+        const record = {
+          id: generateId(),
+          nama: currentUser.name,
+          emel: currentUser.email || '',
+          kategori: currentUser.category,
+          waktuMasuk: formatTime(now),
+          waktuKeluar: '',
+          lokasiGPS: currentGPS ? `${currentGPS.lat.toFixed(6)}, ${currentGPS.lng.toFixed(6)}` : 'N/A',
+          linkGambar: '',
+          deviceId: settings.deviceId,
+          statusSync: isOnline ? 'synced' : 'pending',
+          isPelawat: false,
+          tarikh: getTodayDateString(),
+          timestamp: now.toISOString()
+        };
+
+        const result = await window.dataSdk.create(record);
+        if (result.isOk) showToast('✅ Daftar masuk berjaya!', 'success');
+        else showToast('❌ Gagal menyimpan rekod', 'error');
+      }
+      catch (error) { showToast(`❌ Ralat: ${error.message || error}`, 'error'); }
+      btn.disabled = false; btn.innerHTML = '<svg class="w-5 h-5" fill="none" stroke="currentColor" viewbox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 16l-4-4m0 0l4-4m-4 4h14m-5 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h7a3 3 0 013 3v1"/></svg> MASUK';
+      updateActionButtons();
+    }
+
+    async function handleCheckout() {
+      const btn = document.getElementById('checkout-btn');
+      btn.disabled = true; btn.innerHTML = '<div class="spinner"></div>';
+
+      try {
+        const activeRecord = todayRecords.find(r => r.nama === currentUser.name && !r.waktuKeluar);
+        if (activeRecord) {
+          activeRecord.waktuKeluar = formatTime(new Date());
+          const result = await window.dataSdk.update(activeRecord);
+          if (result.isOk) showToast('✅ Daftar keluar berjaya!', 'success');
+        }
+      } catch (error) { showToast('❌ Ralat', 'error'); }
+      btn.disabled = false; btn.innerHTML = '<svg class="w-5 h-5" fill="none" stroke="currentColor" viewbox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"/></svg> KELUAR';
+      updateActionButtons();
+    }
+
+    // ==================== REGISTRATION ====================
+    async function handleRegistrationSubmit() {
+      const name = document.getElementById('reg-name').value.trim();
+      const category = document.getElementById('reg-category').value;
+      const email = document.getElementById('reg-email').value.trim();
+      const password = document.getElementById('reg-password').value;
+      const btn = document.getElementById('submit-reg-btn');
+
+      if (!name || !category || !password) return showToast('⚠️ Isi maklumat wajib', 'error');
+      if (category === 'GURU' && !email) return showToast('⚠️ Guru perlu emel', 'error');
+      if (!settings.gasUrl) return showToast('⚠️ URL Apps Script tiada', 'error');
+
+      btn.disabled = true; btn.innerHTML = '<div class="spinner"></div>';
+      try {
+        const result = await callAppsScript('registerUser', { nama: name, kategori: category, email: email, password: password });
+        if (result.success) {
+            showToast('✅ Pendaftaran Berjaya! Sila Log Masuk.', 'success');
+            document.getElementById('registration-modal').classList.add('hidden');
+        } else {
+            showToast('❌ ' + result.message, 'error');
+        }
+      } catch(e) { showToast('❌ Ralat: ' + e.message, 'error'); }
+      btn.disabled = false; btn.innerHTML = 'Daftar Akaun';
+    }
+
+    // ==================== GLOBAL CONFIG SYNC ====================
+    async function syncGlobalConfig() {
+       if (!settings.gasUrl) return;
+       try {
+          const res = await callAppsScript('getConfig', { _ts: new Date().getTime() }); // ADDED: Cache busting timestamp
+          if (res.success && res.data) {
+             // Update local settings with server data
+             let changed = false;
+             const keys = ['gasUrl', 'googleClientId', 'schoolLat', 'schoolLng', 'geofencingEnabled', 'geofenceRadius'];
+             
+             keys.forEach(key => {
+                 if (res.data[key] !== undefined && res.data[key] !== settings[key]) {
+                     if (key === 'schoolLat' || key === 'schoolLng') settings[key] = parseFloat(res.data[key]);
+                     else if (key === 'geofencingEnabled') settings[key] = String(res.data[key]).toLowerCase() === 'true';
+                     else if (key === 'geofenceRadius') settings[key] = parseInt(res.data[key]) || 200;
+                     else settings[key] = res.data[key];
+                     changed = true;
+                 }
+             });
+
+             if (changed) {
+                saveSettings();
+                // Update UI elements if Admin Panel is open
+                if (document.getElementById('gas-url')) document.getElementById('gas-url').value = settings.gasUrl || '';
+                if (document.getElementById('google-client-id')) document.getElementById('google-client-id').value = settings.googleClientId || '';
+                if (document.getElementById('school-lat')) document.getElementById('school-lat').value = settings.schoolLat || '';
+                if (document.getElementById('school-lng')) document.getElementById('school-lng').value = settings.schoolLng || '';
+                if (document.getElementById('geofence-radius')) document.getElementById('geofence-radius').value = settings.geofenceRadius || 200;
+                
+                const gfToggle = document.getElementById('toggle-geofence');
+                const gfDot = document.getElementById('geofence-toggle-dot');
+                const gfText = document.getElementById('geofence-status-text');
+                if(gfToggle) {
+                    gfToggle.style.background = settings.geofencingEnabled ? '#10B981' : '#ccc';
+                    gfDot.style.transform = settings.geofencingEnabled ? 'translateX(29px)' : 'translateX(1px)';
+                    gfText.textContent = settings.geofencingEnabled ? 'DIHIDUPKAN' : 'DIMATIKAN';
+                }
+
+                // REFRESH APP STATE IMMEDIATELY
+                updateGPSStatus();
+                updateActionButtons();
+                
+                console.log('Global config synced & applied');
+                initGoogleAuth();
+             }
+          }
+       } catch(e) { console.log('Silent sync failed', e); }
+    }
+
+    // ==================== INIT ====================
+    async function init() {
+      loadSettings();
+      loadCurrentUser();
+      updateUIState();
+      await window.elementSdk?.init({ defaultConfig, onConfigChange: (c) => { document.getElementById('app-title').textContent = c.app_title || defaultConfig.app_title; } });
+      await window.dataSdk?.init(dataHandler);
+      
+      // Restore Admin Session
+      if (localStorage.getItem('admin_session') === 'true') {
+         document.getElementById('admin-modal').classList.remove('hidden');
+         document.getElementById('admin-password-section').classList.add('hidden');
+         document.getElementById('admin-content').classList.remove('hidden');
+         syncGlobalConfig().then(() => {
+             document.getElementById('gas-url').value = settings.gasUrl || '';
+             document.getElementById('google-client-id').value = settings.googleClientId || '';
+             document.getElementById('school-lat').value = settings.schoolLat || '';
+             document.getElementById('school-lng').value = settings.schoolLng || '';
+             document.getElementById('geofence-radius').value = settings.geofenceRadius || 200;
+             const gfToggle = document.getElementById('toggle-geofence');
+             if(gfToggle) {
+                gfToggle.style.background = settings.geofencingEnabled ? '#10B981' : '#ccc';
+                document.getElementById('geofence-toggle-dot').style.transform = settings.geofencingEnabled ? 'translateX(29px)' : 'translateX(1px)';
+                document.getElementById('geofence-status-text').textContent = settings.geofencingEnabled ? 'DIHIDUPKAN' : 'DIMATIKAN';
+             }
+         });
+      }
+      
+      // Event Listeners
+      document.getElementById('checkin-btn').addEventListener('click', handleCheckin);
+      document.getElementById('checkout-btn').addEventListener('click', handleCheckout);
+      document.getElementById('btn-login-manual').addEventListener('click', handleManualLogin);
+      document.getElementById('btn-login-google-page').addEventListener('click', handleGoogleButtonClick);
+      document.getElementById('logout-btn').addEventListener('click', handleLogout);
+      
+      // Registration UI
+      document.getElementById('btn-goto-register').addEventListener('click', () => document.getElementById('registration-modal').classList.remove('hidden'));
+      document.getElementById('close-reg-modal').addEventListener('click', () => document.getElementById('registration-modal').classList.add('hidden'));
+      document.getElementById('reg-category').addEventListener('change', (e) => document.getElementById('reg-email-container').classList.toggle('hidden', e.target.value !== 'GURU'));
+      document.getElementById('submit-reg-btn').addEventListener('click', handleRegistrationSubmit);
+
+      // Admin
+      document.getElementById('admin-btn-login').addEventListener('click', () => document.getElementById('admin-modal').classList.remove('hidden'));
+      document.getElementById('close-admin-modal').addEventListener('click', () => {
+          document.getElementById('admin-modal').classList.add('hidden');
+          localStorage.removeItem('admin_session');
+      });
+      document.getElementById('admin-login-btn').addEventListener('click', async () => {
+         if (document.getElementById('admin-password').value === ADMIN_PASSWORD) {
+             localStorage.setItem('admin_session', 'true');
+             const btn = document.getElementById('admin-login-btn');
+             btn.disabled = true;
+             btn.textContent = 'Menyemak Data Cloud...';
+             await syncGlobalConfig(); // Pull from Sheet
+             btn.textContent = 'Masuk';
+             btn.disabled = false;
+             
+             document.getElementById('admin-password-section').classList.add('hidden'); document.getElementById('admin-content').classList.remove('hidden');
+             // Pre-fill inputs
+             document.getElementById('gas-url').value = settings.gasUrl || '';
+             document.getElementById('google-client-id').value = settings.googleClientId || '';
+             document.getElementById('school-lat').value = settings.schoolLat || '';
+             document.getElementById('school-lng').value = settings.schoolLng || '';
+             document.getElementById('geofence-radius').value = settings.geofenceRadius || 200;
+             
+             // Pre-fill Geofence Status
+             const gfToggle = document.getElementById('toggle-geofence');
+             const gfDot = document.getElementById('geofence-toggle-dot');
+             const gfText = document.getElementById('geofence-status-text');
+             gfToggle.style.background = settings.geofencingEnabled ? '#10B981' : '#ccc';
+             gfDot.style.transform = settings.geofencingEnabled ? 'translateX(29px)' : 'translateX(1px)';
+             gfText.textContent = settings.geofencingEnabled ? 'DIHIDUPKAN' : 'DIMATIKAN';
+             
+         } else document.getElementById('admin-error').classList.remove('hidden');
+      });
+      
+      // Admin Config Lock
+      document.getElementById('config-lock-btn').addEventListener('click', () => {
+         isConfigLocked = !isConfigLocked;
+         const btn = document.getElementById('config-lock-btn');
+         const inputs = ['gas-url', 'google-client-id'];
+         const saveBtn = document.getElementById('save-config-btn');
+         
+         if (isConfigLocked) {
+             btn.innerHTML = '<svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"/></svg> TERKUNCI';
+             btn.className = 'text-xs font-bold px-3 py-1.5 rounded-lg bg-red-100 text-red-600 flex items-center gap-1 transition-colors hover:bg-red-200';
+             inputs.forEach(id => document.getElementById(id).disabled = true);
+             saveBtn.disabled = true;
+         } else {
+             btn.innerHTML = '<svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 11V7a4 4 0 118 0m-4 8v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2z"/></svg> NYAHKUNCI';
+             btn.className = 'text-xs font-bold px-3 py-1.5 rounded-lg bg-green-100 text-green-600 flex items-center gap-1 transition-colors hover:bg-green-200';
+             inputs.forEach(id => document.getElementById(id).disabled = false);
+             saveBtn.disabled = false;
+         }
+      });
+
+      // Admin Control Lock
+      document.getElementById('control-lock-btn').addEventListener('click', () => {
+         isControlLocked = !isControlLocked;
+         const btn = document.getElementById('control-lock-btn');
+         const inputs = ['school-lat', 'school-lng', 'geofence-radius', 'get-current-location', 'toggle-geofence'];
+         const saveBtn = document.getElementById('save-control-btn');
+         
+         if (isControlLocked) {
+             btn.innerHTML = '<svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"/></svg> TERKUNCI';
+             btn.className = 'text-xs font-bold px-3 py-1.5 rounded-lg bg-red-100 text-red-600 flex items-center gap-1 transition-colors hover:bg-red-200';
+             inputs.forEach(id => document.getElementById(id).disabled = true);
+             saveBtn.disabled = true;
+         } else {
+             btn.innerHTML = '<svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 11V7a4 4 0 118 0m-4 8v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2z"/></svg> NYAHKUNCI';
+             btn.className = 'text-xs font-bold px-3 py-1.5 rounded-lg bg-green-100 text-green-600 flex items-center gap-1 transition-colors hover:bg-green-200';
+             inputs.forEach(id => document.getElementById(id).disabled = false);
+             saveBtn.disabled = false;
+         }
+      });
+
+      document.getElementById('save-config-btn').addEventListener('click', async () => { 
+          const newGasUrl = document.getElementById('gas-url').value.trim();
+          const newClientId = document.getElementById('google-client-id').value.trim();
+          
+          settings.gasUrl = newGasUrl;
+          settings.googleClientId = newClientId;
+          saveSettings(); 
+          
+          // Attempt global sync
+          const btn = document.getElementById('save-config-btn');
+          btn.textContent = 'Menyimpan...';
+          try {
+             await callAppsScript('saveConfig', { googleClientId: newClientId, gasUrl: newGasUrl }); // ADDED: gasUrl to payload
+             showToast('✅ URL & Config Disimpan di Google Sheet', 'success');
+          } catch(e) {
+             showToast('⚠️ Disimpan Local Sahaja. Ralat Server.', 'warning');
+          }
+          btn.textContent = '💾 Simpan Konfigurasi Global';
+          initGoogleAuth();
+      });
+
+      document.getElementById('save-control-btn').addEventListener('click', async () => {
+          const btn = document.getElementById('save-control-btn');
+          btn.disabled = true; btn.textContent = 'Menyimpan Global...';
+          
+          settings.schoolLat = parseFloat(document.getElementById('school-lat').value) || 0;
+          settings.schoolLng = parseFloat(document.getElementById('school-lng').value) || 0;
+          settings.geofenceRadius = parseInt(document.getElementById('geofence-radius').value) || 200;
+          // geofencingEnabled is already toggled in settings
+          saveSettings(); 
+          
+          try {
+             await callAppsScript('saveConfig', { 
+                 schoolLat: settings.schoolLat, 
+                 schoolLng: settings.schoolLng, 
+                 geofencingEnabled: settings.geofencingEnabled,
+                 geofenceRadius: settings.geofenceRadius,
+                 gasUrl: settings.gasUrl // ADDED: Ensure GAS URL is also saved/preserved
+             });
+             showToast('✅ Radius & Lokasi Disimpan di Google Sheet', 'success');
+          } catch(e) {
+             showToast('⚠️ Gagal sync ke server', 'warning');
+          }
+          btn.disabled = false; btn.textContent = '💾 Simpan & Sync Tetapan (Global)';
+      });
+      
+      document.getElementById('get-current-location').addEventListener('click', () => {
+          if (currentGPS) { document.getElementById('school-lat').value = currentGPS.lat; document.getElementById('school-lng').value = currentGPS.lng; } 
+          else showToast('⚠️ GPS tiada', 'warning');
+      });
+      document.getElementById('toggle-geofence').addEventListener('click', () => {
+          settings.geofencingEnabled = !settings.geofencingEnabled;
+          document.getElementById('toggle-geofence').style.background = settings.geofencingEnabled ? '#10B981' : '#ccc';
+          document.getElementById('geofence-toggle-dot').style.transform = settings.geofencingEnabled ? 'translateX(29px)' : 'translateX(1px)';
+          document.getElementById('geofence-status-text').textContent = settings.geofencingEnabled ? 'DIHIDUPKAN' : 'DIMATIKAN';
+      });
+      
+      // Tabs
+      document.querySelectorAll('.admin-tab').forEach(t => t.addEventListener('click', () => {
+          document.querySelectorAll('.admin-tab').forEach(x => x.classList.remove('active')); t.classList.add('active');
+          document.querySelectorAll('.admin-tab-content').forEach(c => c.classList.add('hidden'));
+          document.getElementById(`tab-${t.dataset.tab}`).classList.remove('hidden');
+      }));
+      document.querySelectorAll('.tab-btn').forEach(t => t.addEventListener('click', () => {
+          document.querySelectorAll('.tab-btn').forEach(x => x.classList.remove('active')); t.classList.add('active');
+          currentFilter = t.dataset.filter; renderRecords();
+      }));
+
+      // Visitor
+      document.getElementById('visitor-fab').addEventListener('click', () => document.getElementById('visitor-modal').classList.remove('hidden'));
+      document.getElementById('close-visitor-modal').addEventListener('click', () => document.getElementById('visitor-modal').classList.add('hidden'));
+      document.getElementById('visitor-purpose').addEventListener('input', () => document.getElementById('submit-visitor-btn').disabled = false);
+      document.getElementById('submit-visitor-btn').addEventListener('click', async () => {
+          const btn = document.getElementById('submit-visitor-btn'); btn.disabled = true; btn.innerHTML = '<div class="spinner"></div>';
+          try {
+             await window.dataSdk.create({ 
+                id: generateId(), nama: document.getElementById('visitor-name').value.toUpperCase(), 
+                kategori: 'PELAWAT', waktuMasuk: formatTime(new Date()), tarikh: getTodayDateString(), isPelawat: true, tujuan: document.getElementById('visitor-purpose').value 
+             });
+             showToast('✅ Pelawat didaftarkan', 'success'); document.getElementById('visitor-modal').classList.add('hidden');
+          } catch (e) { showToast('❌ Gagal', 'error'); }
+          btn.disabled = false; btn.innerHTML = 'Daftar Pelawat';
+      });
+
+      initGPS();
+      initGoogleAuth();
+      syncGlobalConfig(); // Auto-sync on startup
+      setInterval(syncGlobalConfig, 300000); // Berkala setiap 5 minit
+      setInterval(() => { const n = new Date(); document.getElementById('current-date').textContent = formatDate(n); document.getElementById('current-time').textContent = formatTime(n); }, 1000);
+    }
+
+    // Copy Code Helper
+    window.copyCode = (k) => { navigator.clipboard.writeText(codeStorage[k] || '').then(() => showToast('✅ Kod disalin!', 'success')); };
+    const codeStorage = { 
+      googleClientId: 'Sila buat projek di Google Cloud Console, dapatkan Client ID, dan tampal di tab Konfigurasi.', 
+      manifest: JSON.stringify({
+  "name": "Sistem Kehadiran 3D Elite",
+  "short_name": "Kehadiran",
+  "description": "Sistem kehadiran digital PWA dengan GPS tracking",
+  "scope": "/",
+  "start_url": "/index.html",
+  "display": "standalone",
+  "orientation": "portrait-primary",
+  "background_color": "#F8F9FA",
+  "theme_color": "#10B981",
+  "icons": [
+    {
+      "src": "data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 192 192'><rect fill='%2310B981' width='192' height='192'/><text x='96' y='120' font-size='80' font-weight='bold' fill='white' text-anchor='middle'>K</text></svg>",
+      "sizes": "192x192",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    }
+  ],
+  "screenshots": [
+    {
+      "src": "data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 540 720'><rect fill='%23F8F9FA' width='540' height='720'/></svg>",
+      "sizes": "540x720",
+      "type": "image/svg+xml",
+      "form_factor": "narrow"
+    }
+  ],
+  "categories": ["productivity"],
+  "shortcuts": [
+    {
+      "name": "Daftar Masuk",
+      "short_name": "Masuk",
+      "description": "Daftar kehadiran masuk",
+      "url": "/index.html?action=checkin",
+      "icons": [
+        {
+          "src": "data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 96 96'><text x='48' y='60' font-size='60' text-anchor='middle'>📥</text></svg>",
+          "sizes": "96x96"
+        }
+      ]
+    }
+  ],
+  "prefer_related_applications": false
+}, null, 2),
+      sw: `const CACHE_NAME = 'kehadiran-v1';
+const ASSETS_TO_CACHE = [
+  '/',
+  '/index.html',
+  'https://cdn.tailwindcss.com/3.4.17',
+  'https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&display=swap'
+];
+
+// Install event - cache assets
+self.addEventListener('install', (event) => {
+  console.log('[ServiceWorker] Installing...');
+  event.waitUntil(
+    caches.open(CACHE_NAME).then((cache) => {
+      console.log('[ServiceWorker] Caching app shell');
+      return cache.addAll(ASSETS_TO_CACHE).catch(() => {
+        console.log('[ServiceWorker] Some assets could not be cached');
+      });
+    })
+  );
+  self.skipWaiting();
+});
+
+// Activate event - cleanup old caches
+self.addEventListener('activate', (event) => {
+  console.log('[ServiceWorker] Activating...');
+  event.waitUntil(
+    caches.keys().then((cacheNames) => {
+      return Promise.all(
+        cacheNames.map((cacheName) => {
+          if (cacheName !== CACHE_NAME) {
+            console.log('[ServiceWorker] Deleting old cache:', cacheName);
+            return caches.delete(cacheName);
+          }
+        })
+      );
+    })
+  );
+  self.clients.claim();
+});
+
+// Fetch event - Network first, fallback to cache
+self.addEventListener('fetch', (event) => {
+  const { request } = event;
+  
+  // Skip cross-origin requests
+  if (!request.url.startsWith(self.location.origin) && !request.url.startsWith('https://fonts.googleapis.com') && !request.url.startsWith('https://cdn.tailwindcss.com')) {
+    return;
+  }
+
+  event.respondWith(
+    fetch(request)
+      .then((response) => {
+        // Cache successful responses
+        if (response.ok) {
+          const responseClone = response.clone();
+          caches.open(CACHE_NAME).then((cache) => {
+            cache.put(request, responseClone);
+          });
+        }
+        return response;
+      })
+      .catch(() => {
+        // Return cached response when offline
+        return caches.match(request).then((response) => {
+          if (response) {
+            return response;
+          }
+          // Return offline page if available
+          if (request.destination === 'document') {
+            return new Response(
+              '<html><body><h1>Offline Mode</h1><p>Aplikasi berfungsi dalam mode offline</p></body></html>',
+              { headers: { 'Content-Type': 'text/html' } }
+            );
+          }
+          return new Response('Network request failed', { status: 408 });
+        });
+      })
+  );
+});
+
+// Background sync untuk data offline
+self.addEventListener('sync', (event) => {
+  if (event.tag === 'sync-attendance') {
+    event.waitUntil(syncAttendanceData());
+  }
+});
+
+async function syncAttendanceData() {
+  const db = await openIndexedDB();
+  const pendingRecords = await getPendingRecords(db);
+  
+  for (const record of pendingRecords) {
+    try {
+      await fetch('/api/attendance', { 
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(record)
+      });
+      await markRecordSynced(db, record.id);
+    } catch (error) {
+      console.error('Sync failed for record:', record.id);
+    }
+  }
+}`,
+      appsScript: `// Google Apps Script untuk Sistem Kehadiran
 // LANGKAH: Copy semua kod di bawah ke Google Apps Script editor
 // Kemudian Deploy sebagai Web App
 
@@ -304,3 +1677,10 @@ function setup() {
   });
   createImageFolder();
 }
+`
+    };
+
+    init();
+  </script>
+ </body>
+</html>
