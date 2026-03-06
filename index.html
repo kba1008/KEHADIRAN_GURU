@@ -272,7 +272,7 @@
        <div class="w-20 h-20 rounded-2xl bg-gradient-to-br from-emerald-400 to-emerald-600 flex items-center justify-center shadow-lg mx-auto mb-4">
          <svg class="w-10 h-10 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
        </div>
-       <h1 class="font-bold text-gray-800 text-2xl">Sistem Kehadiran</h1>
+       <h1 class="font-bold text-gray-800 text-2xl">Sistem Kehadiran v1</h1>
        <p class="text-sm text-gray-500">SK SELAMA (K)</p>
      </div>
      
@@ -752,11 +752,13 @@
         btn.disabled = true; btn.textContent = 'Memproses...';
         try {
             const res = await callAppsScript('validateUser', { nama: name, password: pass });
-            if (res.success && res.data) {
-                if (selectedCategory && res.data.kategori !== selectedCategory) {
-                    showToast(`⚠️ Kategori salah. Anda berdaftar sebagai ${res.data.kategori}`, 'warning');
+            // Fix: AppsScript returns flattened object for validateUser, not nested in data property
+            const userData = res.data || res; 
+            if (res.success) {
+                if (selectedCategory && userData.kategori !== selectedCategory) {
+                    showToast(`⚠️ Kategori salah. Anda berdaftar sebagai ${userData.kategori}`, 'warning');
                 }
-                currentUser = { name: res.data.nama, category: res.data.kategori, email: res.data.email || '' };
+                currentUser = { name: userData.nama, category: userData.kategori, email: userData.email || '' };
                 saveCurrentUser();
                 updateUIState();
                 showToast(`✅ Selamat Datang, ${currentUser.name}`, 'success');
@@ -788,7 +790,8 @@
             if (settings.gasUrl) {
                 const validRes = await callAppsScript('validateUser', { email: profile.email });
                 if (!validRes.success) { showToast('❌ Akaun Google ini belum didaftarkan.', 'error'); return; }
-                currentUser = { name: validRes.data.nama, category: validRes.data.kategori, email: profile.email, imageUrl: profile.picture };
+                const userData = validRes.data || validRes;
+                currentUser = { name: userData.nama, category: userData.kategori, email: profile.email, imageUrl: profile.picture };
             } else {
                  currentUser = { name: profile.name, category: 'GURU', email: profile.email, imageUrl: profile.picture };
             }
@@ -860,7 +863,7 @@
         else showToast('❌ Gagal menyimpan rekod', 'error');
       }
       catch (error) { showToast(`❌ Ralat: ${error.message || error}`, 'error'); }
-      btn.disabled = false; btn.innerHTML = '<svg class="w-5 h-5" fill="none" stroke="currentColor" viewbox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 16l-4-4m0 0l4-4m-4 4h14m-5 4v1a3 3 0 01-3 3H6a3 3 0 013-3V7a3 3 0 013-3h7a3 3 0 013 3v1"/></svg> MASUK';
+      btn.disabled = false; btn.innerHTML = '<svg class="w-5 h-5" fill="none" stroke="currentColor" viewbox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 16l-4-4m0 0l4-4m-4 4h14m-5 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h7a3 3 0 013 3v1"/></svg> MASUK';
       updateActionButtons();
     }
 
