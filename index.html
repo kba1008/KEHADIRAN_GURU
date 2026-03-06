@@ -597,7 +597,7 @@
   <script>
     // ==================== CODE STORAGE & CONFIG ====================
     const ADMIN_PASSWORD = '101010';
-    const GAS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbzF2Occw6ikI_dSGYWp_yUkg-VmvjSZ4vrow7rLCVWRWYMNqzzV8P5Sh8NDdk3_bQ2ohg/exec'; // MASUKKAN URL GOOGLE APPS SCRIPT (DEPLOYMENT) DI SINI
+    const GAS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbys2t4-cvCkPGNws3TAgS4Uqr_IjIcWtoX9QJynS2-BrB5LT8aTggaUh9h9AC17L-Vp/exec'; // MASUKKAN URL GOOGLE APPS SCRIPT (DEPLOYMENT) DI SINI
     const defaultConfig = { app_title: 'Sistem Kehadiran 3D Elite', school_name: 'SK SELAMA (K)' };
 
     // ==================== STATE ====================
@@ -623,7 +623,7 @@
     }
     function formatDate(d) { return d.toLocaleDateString('ms-MY', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' }); }
     function formatTime(d) { return d.toLocaleTimeString('ms-MY', { hour: 'numeric', minute: '2-digit', second: '2-digit', hour12: true }); }
-    function getTodayDateString() { return new Date().toISOString().split('T')[0]; }
+    function getTodayDateString() { const d = new Date(); return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0'); }
     function showToast(msg, type = 'info') {
       const container = document.getElementById('toast-container');
       const toast = document.createElement('div'); toast.className = 'toast'; toast.textContent = msg;
@@ -641,7 +641,10 @@
     function loadSettings() {
       const saved = localStorage.getItem('attendance_settings');
       if (saved) settings = { ...settings, ...JSON.parse(saved) };
-      if (!settings.gasUrl && GAS_SCRIPT_URL) settings.gasUrl = GAS_SCRIPT_URL; // Guna hardcoded jika tiada di local storage
+      
+      // UBAHSUAI: Paksa guna URL dari kod jika ada (untuk selesaikan masalah sync dan data stale)
+      if (GAS_SCRIPT_URL) { settings.gasUrl = GAS_SCRIPT_URL; saveSettings(); }
+
       if (!settings.deviceId) { settings.deviceId = generateDeviceId(); saveSettings(); }
       if (!settings.geofenceRadius) settings.geofenceRadius = 200;
     }
@@ -891,12 +894,16 @@
       try {
         const reqs = cats.map(c => callAppsScript('getRecords', { kategori: c }).then(r => {
            if(r.success && r.data && r.data.records) {
-             return r.data.records.slice(1).map(row => ({
-               timestamp: row[0], tarikh: row[1], nama: row[2], emel: row[3],
-               waktuMasuk: row[4], waktuKeluar: row[5], lokasiGPS: row[6],
-               deviceId: row[7], linkGambar: row[8], tujuan: row[9],
-               statusSync: row[10], kategori: c, isPelawat: c==='PELAWAT'
-             }));
+             return r.data.records.slice(1).map(row => {
+               let t = row[1];
+               if (typeof t === 'string' && t.includes('T')) { const d = new Date(t); t = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0'); }
+               return {
+                 timestamp: row[0], tarikh: t, nama: row[2], emel: row[3],
+                 waktuMasuk: row[4], waktuKeluar: row[5], lokasiGPS: row[6],
+                 deviceId: row[7], linkGambar: row[8], tujuan: row[9],
+                 statusSync: row[10], kategori: c, isPelawat: c==='PELAWAT'
+               };
+             });
            }
            return [];
         }));
@@ -1404,313 +1411,6 @@ async function syncAttendanceData() {
     }
   }
 }`,
-      appsScript: `// Google Apps Script untuk Sistem Kehadiran
-// LANGKAH: Copy semua kod di bawah ke Google Apps Script editor
-// Kemudian Deploy sebagai Web App
-
-// ===== KONFIGURASI =====
-const SPREADSHEET_ID = '1iUdTt97cB2jikhJQWXua3exnzVQTps9FP4jjpSPzbOc';
-const DRIVE_FOLDER_ID = '17bN3qRKyryr2sRorPkCbrPmbgRzL8A4W';
-const SHEET_NAMES = {
-  GURU: 'GURU',
-  AKP: 'AKP',
-  KEBERSIHAN: 'KEBERSIHAN',
-  PELAWAT: 'PELAWAT',
-  PENDAFTARAN: 'PENDAFTARAN',
-  SETTING: 'SETTING'
-};
-
-// ===== MAIN FUNCTIONS =====
-function doPost(e) {
-  try {
-    const data = JSON.parse(e.postData.contents);
-    const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
-    
-    switch(data.action) {
-      case 'addRecord':
-        return addAttendanceRecord(ss, data);
-      case 'updateCheckout':
-        return updateCheckoutTime(ss, data);
-      case 'uploadImage':
-        return uploadImageToDrive(data);
-      case 'getRecords':
-        return getRecords(ss, data);
-      case 'registerUser':
-        return registerUser(ss, data);
-      case 'validateUser':
-        return validateUser(ss, data);
-      case 'saveConfig':
-        return saveConfig(ss, data);
-      case 'getConfig':
-        return getConfig(ss);
-      default:
-        return createResponse(false, 'Unknown action');
-    }
-  } catch(error) {
-    Logger.log('Error: ' + error);
-    return createResponse(false, 'Server error: ' + error);
-  }
-}
-
-function doGet(e) {
-  return ContentService
-    .createTextOutput(JSON.stringify({status: 'ok', version: '1.0'}))
-    .setMimeType(ContentService.MimeType.JSON);
-}
-
-// ===== CONFIGURATION FUNCTIONS =====
-function saveConfig(ss, data) {
-  try {
-    let sheet = ss.getSheetByName(SHEET_NAMES.SETTING);
-    if (!sheet) {
-       sheet = ss.insertSheet(SHEET_NAMES.SETTING);
-       sheet.appendRow(['Key', 'Value']);
-    }
-    
-    // Read existing
-    const rows = sheet.getDataRange().getValues();
-    let config = {};
-    if (rows.length > 1) {
-       for(let i=1; i<rows.length; i++) config[rows[i][0]] = rows[i][1];
-    }
-    
-    // Merge new (excluding action)
-    for (const key in data) {
-      if (key !== 'action') config[key] = data[key];
-    }
-    
-    // Write back
-    sheet.clearContents();
-    sheet.appendRow(['Key', 'Value']);
-    for (const key in config) {
-       sheet.appendRow([key, config[key]]);
-    }
-    
-    return createResponse(true, 'Config saved');
-  } catch(e) { return createResponse(false, e.toString()); }
-}
-
-function getConfig(ss) {
-  try {
-    const sheet = ss.getSheetByName(SHEET_NAMES.SETTING);
-    if (!sheet) return createResponse(true, 'No config found', { googleClientId: '' });
-    
-    const rows = sheet.getDataRange().getValues();
-    let config = {};
-    for(let i=1; i<rows.length; i++) {
-       config[rows[i][0]] = rows[i][1];
-    }
-    return createResponse(true, 'Config loaded', config);
-  } catch(e) { return createResponse(false, e.toString()); }
-}
-
-// ===== USER MANAGEMENT FUNCTIONS =====
-function registerUser(ss, data) {
-  try {
-    const sheet = ss.getSheetByName(SHEET_NAMES.PENDAFTARAN);
-    if (!sheet) return createResponse(false, 'Sheet PENDAFTARAN not found');
-    
-    // Check duplicates
-    const rows = sheet.getDataRange().getValues();
-    // Skip header row 0
-    for (let i = 1; i < rows.length; i++) {
-      const rowName = rows[i][1].toString().toUpperCase();
-      const rowEmail = rows[i][3].toString().toLowerCase();
-      
-      if (rowName === data.nama.toUpperCase()) {
-        return createResponse(false, 'DUPLICATE_NAME');
-      }
-      if (data.email && rowEmail === data.email.toLowerCase()) {
-        return createResponse(false, 'DUPLICATE_EMAIL');
-      }
-    }
-    
-    // Append new user
-    sheet.appendRow([
-      new Date().toISOString(),
-      data.nama.toUpperCase().trim(),
-      data.kategori,
-      data.email ? data.email.toLowerCase().trim() : '-',
-      String(data.password).trim(),
-      'AKTIF'
-    ]);
-    
-    return createResponse(true, 'Pendaftaran berjaya');
-  } catch(error) {
-    return createResponse(false, error.toString());
-  }
-}
-
-function validateUser(ss, data) {
-  try {
-    const sheet = ss.getSheetByName(SHEET_NAMES.PENDAFTARAN);
-    if (!sheet) return createResponse(false, 'Sheet PENDAFTARAN not found');
-    
-    const rows = sheet.getDataRange().getValues();
-    let isValid = false;
-    let userData = null;
-    
-    const inputName = data.nama ? data.nama.toUpperCase().trim() : '';
-    const inputPass = data.password ? String(data.password).trim() : '';
-    const inputEmail = data.email ? data.email.toLowerCase().trim() : '';
-    
-    for (let i = 1; i < rows.length; i++) {
-      const rowName = String(rows[i][1]).toUpperCase().trim(); // Nama
-      const rowCategory = String(rows[i][2]);
-      const rowEmail = String(rows[i][3]).toLowerCase().trim();
-      const rowPass = String(rows[i][4]).trim();
-      
-      if (rowName === "") continue;
-
-      // Logik Validasi
-      if (inputEmail && rowEmail === inputEmail) {
-        // Login Google
-        isValid = true;
-        userData = { nama: rowName, kategori: rowCategory, email: rowEmail };
-        break;
-      }
-      else if (inputName && inputPass && rowName === inputName && rowPass === inputPass) {
-        // Login Manual
-        isValid = true;
-        userData = { nama: rowName, kategori: rowCategory, email: rowEmail };
-        break;
-      }
-    }
-    
-    if(isValid) {
-       return createResponse(true, 'Login Berjaya', userData);
-    } else {
-       return createResponse(false, 'PENGGUNA TIDAK DITEMUI ATAU KATA LALUAN SALAH. SILA PERIKSA EJAAN NAMA.');
-    }
-  } catch(error) {
-    return createResponse(false, error.toString());
-  }
-}
-
-// ===== ATTENDANCE FUNCTIONS =====
-function addAttendanceRecord(ss, data) {
-  try {
-    const kategori = data.kategori || 'UMUM';
-    let sheet = ss.getSheetByName(SHEET_NAMES[kategori]);
-    
-    if (!sheet) {
-      sheet = ss.insertSheet(SHEET_NAMES[kategori]);
-      sheet.appendRow(['Timestamp', 'Tarikh', 'Nama', 'Emel', 'Waktu Masuk', 'Waktu Keluar', 'Lokasi GPS', 'Device ID', 'Link Gambar', 'Tujuan', 'Status']);
-      sheet.setFrozenRows(1);
-    }
-    
-    sheet.appendRow([
-      new Date().toISOString(),
-      data.tarikh || new Date().toLocaleDateString('ms-MY'),
-      data.nama || '-',
-      data.emel || '-',
-      data.waktuMasuk || '-',
-      data.waktuKeluar || '-',
-      data.lokasiGPS || '-',
-      data.deviceId || '-',
-      data.linkGambar || '-',
-      data.tujuan || '-',
-      data.statusSync || 'synced'
-    ]);
-    
-    return createResponse(true, 'Record added successfully');
-  } catch(error) {
-    return createResponse(false, error.toString());
-  }
-}
-
-function updateCheckoutTime(ss, data) {
-  try {
-    const sheet = ss.getSheetByName(SHEET_NAMES[data.kategori]);
-    if (!sheet) return createResponse(false, 'Sheet not found');
-    
-    const rows = sheet.getDataRange().getValues();
-    for (let i = 1; i < rows.length; i++) {
-      if (rows[i][7] === data.deviceId && rows[i][4] === data.waktuMasuk) {
-        sheet.getRange(i + 1, 6).setValue(data.waktuKeluar);
-        return createResponse(true, 'Checkout updated');
-      }
-    }
-    return createResponse(false, 'Record not found');
-  } catch(error) {
-    return createResponse(false, error.toString());
-  }
-}
-
-function uploadImageToDrive(ss, data) {
-  try {
-    const folder = DriveApp.getFolderById(DRIVE_FOLDER_ID);
-    const today = new Date().toLocaleDateString('ms-MY');
-    let todayFolder = null;
-    
-    const folders = folder.getFolders();
-    while (folders.hasNext()) {
-      const f = folders.next();
-      if (f.getName() === today) {
-        todayFolder = f;
-        break; // Fixed loop
-      }
-    }
-    
-    if (!todayFolder) todayFolder = folder.createFolder(today);
-    
-    const imageBlob = Utilities.newBlob(
-      Utilities.base64Decode(data.imageBase64),
-      'image/jpeg',
-      data.nama + '_' + new Date().getTime() + '.jpg'
-    );
-    
-    const file = todayFolder.createFile(imageBlob);
-    return createResponse(true, 'Image uploaded', {url: file.getUrl()});
-  } catch(error) {
-    return createResponse(false, error.toString());
-  }
-}
-
-function getRecords(ss, data) {
-  try {
-    const sheet = ss.getSheetByName(SHEET_NAMES[data.kategori || 'GURU']);
-    if (!sheet) return createResponse(false, 'Sheet not found');
-    
-    const records = sheet.getDataRange().getValues();
-    return createResponse(true, 'Records retrieved', {records: records, count: records.length});
-  } catch(error) {
-    return createResponse(false, error.toString());
-  }
-}
-
-// ===== UTILITY FUNCTIONS =====
-function createResponse(success, message, data = {}) {
-  return ContentService
-    .createTextOutput(JSON.stringify({success, message, timestamp: new Date().toISOString(), ...data}))
-    .setMimeType(ContentService.MimeType.JSON);
-}
-
-function createImageFolder() {
-  try {
-    DriveApp.getFolderById(DRIVE_FOLDER_ID).createFolder('GAMBAR');
-  } catch(e) {}
-}
-
-function setup() {
-  const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
-  Object.values(SHEET_NAMES).forEach(name => {
-    let sheet = ss.getSheetByName(name);
-    if (!sheet) {
-      sheet = ss.insertSheet(name);
-      if(name === 'PENDAFTARAN') {
-         sheet.appendRow(['Timestamp', 'Nama', 'Kategori', 'Emel', 'Kata Laluan', 'Status']);
-      } else if(name === 'SETTING') {
-         sheet.appendRow(['Key', 'Value']);
-      } else {
-         sheet.appendRow(['Timestamp', 'Tarikh', 'Nama', 'Emel', 'Waktu Masuk', 'Waktu Keluar', 'Lokasi GPS', 'Device ID', 'Link Gambar', 'Tujuan', 'Status']);
-      }
-      sheet.setFrozenRows(1);
-    }
-  });
-  createImageFolder();
-}
-`,
       appsScript: `// Google Apps Script untuk Sistem Kehadiran
 // LANGKAH: Copy semua kod di bawah ke Google Apps Script editor
 // Kemudian Deploy sebagai Web App
