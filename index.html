@@ -843,7 +843,8 @@
         
         if (tokenClient) {
              tokenClient.requestAccessToken({prompt: 'consent select_account'});
-        } else {
+        }
+        else {
              showToast('❌ Ralat inisialisasi Google. Sila guna manual.', 'error');
         }
     }
@@ -954,11 +955,11 @@
     async function syncGlobalConfig() {
        if (!settings.gasUrl) return;
        try {
-          const res = await callAppsScript('getConfig');
+          const res = await callAppsScript('getConfig', { _ts: new Date().getTime() }); // ADDED: Cache busting timestamp
           if (res.success && res.data) {
              // Update local settings with server data
              let changed = false;
-             const keys = ['googleClientId', 'schoolLat', 'schoolLng', 'geofencingEnabled', 'geofenceRadius'];
+             const keys = ['gasUrl', 'googleClientId', 'schoolLat', 'schoolLng', 'geofencingEnabled', 'geofenceRadius'];
              
              keys.forEach(key => {
                  if (res.data[key] !== undefined && res.data[key] !== settings[key]) {
@@ -973,6 +974,7 @@
              if (changed) {
                 saveSettings();
                 // Update UI elements if Admin Panel is open
+                if (document.getElementById('gas-url')) document.getElementById('gas-url').value = settings.gasUrl || '';
                 if (document.getElementById('google-client-id')) document.getElementById('google-client-id').value = settings.googleClientId || '';
                 if (document.getElementById('school-lat')) document.getElementById('school-lat').value = settings.schoolLat || '';
                 if (document.getElementById('school-lng')) document.getElementById('school-lng').value = settings.schoolLng || '';
@@ -1091,7 +1093,7 @@
           const btn = document.getElementById('save-config-btn');
           btn.textContent = 'Menyimpan...';
           try {
-             await callAppsScript('saveConfig', { googleClientId: newClientId });
+             await callAppsScript('saveConfig', { googleClientId: newClientId, gasUrl: newGasUrl }); // ADDED: gasUrl to payload
              showToast('✅ Disimpan ke Server & Local', 'success');
           } catch(e) {
              showToast('⚠️ Disimpan Local Sahaja. Ralat Server.', 'warning');
@@ -1332,7 +1334,7 @@ const SHEET_NAMES = {
   KEBERSIHAN: 'KEBERSIHAN',
   PELAWAT: 'PELAWAT',
   PENDAFTARAN: 'PENDAFTARAN',
-  CONFIG: 'CONFIG'
+  SETTING: 'SETTING'
 };
 
 // ===== MAIN FUNCTIONS =====
@@ -1376,9 +1378,9 @@ function doGet(e) {
 // ===== CONFIGURATION FUNCTIONS =====
 function saveConfig(ss, data) {
   try {
-    let sheet = ss.getSheetByName(SHEET_NAMES.CONFIG);
+    let sheet = ss.getSheetByName(SHEET_NAMES.SETTING);
     if (!sheet) {
-       sheet = ss.insertSheet(SHEET_NAMES.CONFIG);
+       sheet = ss.insertSheet(SHEET_NAMES.SETTING);
        sheet.appendRow(['Key', 'Value']);
     }
     
@@ -1407,7 +1409,7 @@ function saveConfig(ss, data) {
 
 function getConfig(ss) {
   try {
-    const sheet = ss.getSheetByName(SHEET_NAMES.CONFIG);
+    const sheet = ss.getSheetByName(SHEET_NAMES.SETTING);
     if (!sheet) return createResponse(true, 'No config found', { googleClientId: '' });
     
     const rows = sheet.getDataRange().getValues();
@@ -1483,7 +1485,7 @@ function validateUser(ss, data) {
         isValid = true;
         userData = { nama: rowName, kategori: rowCategory, email: rowEmail };
         break;
-      } 
+      }
       else if (inputName && inputPass && rowName === inputName && rowPass === inputPass) {
         // Login Manual
         isValid = true;
@@ -1563,7 +1565,7 @@ function uploadImageToDrive(data) {
       const f = folders.next();
       if (f.getName() === today) {
         todayFolder = f;
-        break;
+        break; // Fixed loop
       }
     }
     
@@ -1615,7 +1617,7 @@ function setup() {
       sheet = ss.insertSheet(name);
       if(name === 'PENDAFTARAN') {
          sheet.appendRow(['Timestamp', 'Nama', 'Kategori', 'Emel', 'Kata Laluan', 'Status']);
-      } else if(name === 'CONFIG') {
+      } else if(name === 'SETTING') {
          sheet.appendRow(['Key', 'Value']);
       } else {
          sheet.appendRow(['Timestamp', 'Tarikh', 'Nama', 'Emel', 'Waktu Masuk', 'Waktu Keluar', 'Lokasi GPS', 'Device ID', 'Link Gambar', 'Tujuan', 'Status']);
