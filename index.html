@@ -272,7 +272,7 @@
        <div class="w-20 h-20 rounded-2xl bg-gradient-to-br from-emerald-400 to-emerald-600 flex items-center justify-center shadow-lg mx-auto mb-4">
          <svg class="w-10 h-10 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
        </div>
-       <h1 class="font-bold text-gray-800 text-2xl">Sistem Kehadiran</h1>
+       <h1 class="font-bold text-gray-800 text-2xl">Sistem Kehadiran v1</h1>
        <p class="text-sm text-gray-500">SK SELAMA (K)</p>
      </div>
      
@@ -362,6 +362,7 @@
             <p class="text-xs text-gray-500 font-bold uppercase tracking-wider">Selamat Datang</p>
             <h2 id="user-display-name" class="text-lg font-bold text-gray-800 mt-1">-</h2>
             <span id="user-display-role" class="inline-block mt-2 px-2 py-1 bg-emerald-100 text-emerald-700 text-xs font-bold rounded-lg">-</span>
+            <p id="user-display-email" class="text-xs text-gray-500 mt-1">-</p>
          </div>
          <img id="user-display-avatar" src="" class="w-12 h-12 rounded-full border-2 border-white shadow-md bg-gray-200">
       </div>
@@ -650,6 +651,7 @@
             mainContent.classList.remove('hidden');
             document.getElementById('user-display-name').textContent = currentUser.name;
             document.getElementById('user-display-role').textContent = currentUser.category || 'PENGGUNA';
+            if(document.getElementById('user-display-email')) document.getElementById('user-display-email').textContent = currentUser.email || '-';
             document.getElementById('user-display-avatar').src = currentUser.imageUrl || 'https://ui-avatars.com/api/?name=' + currentUser.name + '&background=10B981&color=fff';
             updateActionButtons();
         } else {
@@ -753,10 +755,8 @@
             if (res.success && res.data) {
                 if (selectedCategory && res.data.kategori !== selectedCategory) {
                     showToast(`⚠️ Kategori salah. Anda berdaftar sebagai ${res.data.kategori}`, 'warning');
-                    // Allow login anyway or return? Currently warnings allow if strict mode is off, but here we enforce
-                    // Actually, let's just warn but allow login for user convenience as requested
                 }
-                currentUser = { name: res.data.nama, category: res.data.kategori, email: '' };
+                currentUser = { name: res.data.nama, category: res.data.kategori, email: res.data.email || '' };
                 saveCurrentUser();
                 updateUIState();
                 showToast(`✅ Selamat Datang, ${currentUser.name}`, 'success');
@@ -790,7 +790,6 @@
                 if (!validRes.success) { showToast('❌ Akaun Google ini belum didaftarkan.', 'error'); return; }
                 currentUser = { name: validRes.data.nama, category: validRes.data.kategori, email: profile.email, imageUrl: profile.picture };
             } else {
-                // Fallback for demo without backend
                  currentUser = { name: profile.name, category: 'GURU', email: profile.email, imageUrl: profile.picture };
             }
             saveCurrentUser();
@@ -859,7 +858,8 @@
         const result = await window.dataSdk.create(record);
         if (result.isOk) showToast('✅ Daftar masuk berjaya!', 'success');
         else showToast('❌ Gagal menyimpan rekod', 'error');
-      } catch (error) { showToast(`❌ Ralat: ${error.message || error}`, 'error'); }
+      }
+      catch (error) { showToast(`❌ Ralat: ${error.message || error}`, 'error'); }
       btn.disabled = false; btn.innerHTML = '<svg class="w-5 h-5" fill="none" stroke="currentColor" viewbox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 16l-4-4m0 0l4-4m-4 4h14m-5 4v1a3 3 0 01-3 3H6a3 3 0 013-3V7a3 3 0 013-3h7a3 3 0 013 3v1"/></svg> MASUK';
       updateActionButtons();
     }
@@ -1212,10 +1212,10 @@ function registerUser(ss, data) {
     // Append new user
     sheet.appendRow([
       new Date().toISOString(),
-      data.nama.toUpperCase(),
+      data.nama.toUpperCase().trim(),
       data.kategori,
-      data.email ? data.email.toLowerCase() : '-',
-      data.password,
+      data.email ? data.email.toLowerCase().trim() : '-',
+      String(data.password).trim(),
       'AKTIF'
     ]);
     
