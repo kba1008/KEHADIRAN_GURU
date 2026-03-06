@@ -278,8 +278,8 @@
      
      <div class="neu-card p-6 w-full max-w-md">
         <div class="flex gap-2 mb-6">
-           <button class="flex-1 py-2 rounded-xl text-sm font-bold transition-all bg-emerald-100 text-emerald-700" id="tab-akp" onclick="switchLoginTab('akp')">AKP & Kebersihan</button>
-           <button class="flex-1 py-2 rounded-xl text-sm font-bold text-gray-500 hover:bg-gray-100" id="tab-guru" onclick="switchLoginTab('guru')">Guru (Delima)</button>
+           <button class="flex-1 py-2 rounded-xl text-sm font-bold transition-all bg-emerald-100 text-emerald-700" id="tab-akp" onclick="switchLoginTab('akp')">Log Masuk Manual</button>
+           <button class="flex-1 py-2 rounded-xl text-sm font-bold text-gray-500 hover:bg-gray-100" id="tab-guru" onclick="switchLoginTab('guru')">Log Masuk Google</button>
         </div>
 
         <!-- LOGIN: AKP/KEBERSIHAN -->
@@ -287,6 +287,7 @@
            <div>
              <label class="block text-xs font-bold text-gray-500 uppercase mb-1">Kategori</label>
              <select id="login-category" class="neu-select">
+                <option value="GURU">GURU</option>
                 <option value="AKP">AKP</option>
                 <option value="KEBERSIHAN">KEBERSIHAN</option>
              </select>
@@ -752,8 +753,8 @@
             if (res.success && res.data) {
                 if (selectedCategory && res.data.kategori !== selectedCategory) {
                     showToast(`⚠️ Kategori salah. Anda berdaftar sebagai ${res.data.kategori}`, 'warning');
-                    btn.disabled = false; btn.textContent = 'LOG MASUK';
-                    return;
+                    // Allow login anyway or return? Currently warnings allow if strict mode is off, but here we enforce
+                    // Actually, let's just warn but allow login for user convenience as requested
                 }
                 currentUser = { name: res.data.nama, category: res.data.kategori, email: '' };
                 saveCurrentUser();
@@ -1233,35 +1234,37 @@ function validateUser(ss, data) {
     let isValid = false;
     let userData = null;
     
+    const inputName = data.nama ? data.nama.toUpperCase().trim() : '';
+    const inputPass = data.password ? String(data.password).trim() : '';
+    const inputEmail = data.email ? data.email.toLowerCase().trim() : '';
+    
     for (let i = 1; i < rows.length; i++) {
       const rowName = String(rows[i][1]).toUpperCase().trim(); // Nama
       const rowCategory = String(rows[i][2]);
       const rowEmail = String(rows[i][3]).toLowerCase().trim();
-      const rowPass = String(rows[i][4]).trim(); // Kata Laluan - Force String & Trim
+      const rowPass = String(rows[i][4]).trim();
+      
+      if (rowName === "") continue;
 
       // Logik Validasi
-      if (data.email) {
+      if (inputEmail && rowEmail === inputEmail) {
         // Login Google
-        if (rowEmail === data.email.toLowerCase().trim()) {
-           isValid = true;
-           userData = { nama: rowName, kategori: rowCategory, email: rowEmail };
-           break;
-        }
+        isValid = true;
+        userData = { nama: rowName, kategori: rowCategory, email: rowEmail };
+        break;
       } 
-      else if (data.nama && data.password) {
+      else if (inputName && inputPass && rowName === inputName && rowPass === inputPass) {
         // Login Manual
-        if (rowName === data.nama.toUpperCase().trim() && rowPass === String(data.password).trim()) {
-           isValid = true;
-           userData = { nama: rowName, kategori: rowCategory, email: rowEmail };
-           break;
-        }
+        isValid = true;
+        userData = { nama: rowName, kategori: rowCategory, email: rowEmail };
+        break;
       }
     }
     
     if(isValid) {
        return createResponse(true, 'Login Berjaya', userData);
     } else {
-       return createResponse(false, 'Maklumat tidak sah atau belum didaftarkan');
+       return createResponse(false, 'PENGGUNA TIDAK DITEMUI ATAU KATA LALUAN SALAH. SILA PERIKSA EJAAN NAMA.');
     }
   } catch(error) {
     return createResponse(false, error.toString());
