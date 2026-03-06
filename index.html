@@ -273,7 +273,7 @@
        <div class="w-20 h-20 rounded-2xl bg-gradient-to-br from-emerald-400 to-emerald-600 flex items-center justify-center shadow-lg mx-auto mb-4">
          <svg class="w-10 h-10 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
        </div>
-       <h1 class="font-bold text-gray-800 text-2xl">Sistem Kehadiran ss</h1>
+       <h1 class="font-bold text-gray-800 text-2xl">Sistem Kehadiran</h1>
        <p class="text-sm text-gray-500">SK SELAMA (K)</p>
      </div>
      
@@ -484,7 +484,7 @@
            <div class="flex-1">
             <p class="text-sm text-gray-700 font-medium mb-2">Status: <span id="geofence-status-text" class="text-green-600 font-bold">DIMATIKAN</span></p>
             <p class="text-xs text-gray-500">DIMATIKAN: Benarkan daftar di mana-mana lokasi</p>
-            <p class="text-xs text-gray-500 mt-1">DIHIDUPKAN: Wajib dalam radius 200m</p>
+            <p class="text-xs text-gray-500 mt-1">DIHIDUPKAN: Wajib dalam radius sekolah</p>
            </div>
            <div class="flex items-center gap-2">
             <button id="toggle-geofence" class="relative inline-flex h-10 w-16 items-center rounded-full transition-colors" style="background: #ccc;"> <span id="geofence-toggle-dot" class="inline-block h-8 w-8 transform rounded-full bg-white transition-transform" style="transform: translateX(1px);"></span> </button>
@@ -492,12 +492,17 @@
           </div>
          </div>
          <div class="border-t border-gray-200 pt-4">
+          <label class="block text-sm font-medium text-gray-600 mb-2">📏 Radius Geofencing (Meter)</label>
+          <input type="number" id="geofence-radius" class="neu-input" placeholder="200" value="200">
+          <p class="text-xs text-gray-500 mt-1">Jarak maksimum dibenarkan dari pusat sekolah.</p>
+         </div>
+         <div class="border-t border-gray-200 pt-4">
           <label class="block text-sm font-medium text-gray-600 mb-2">📍 Koordinat Pusat Sekolah</label>
           <div class="grid grid-cols-2 gap-3"><input type="number" step="any" id="school-lat" class="neu-input" placeholder="Latitude"> <input type="number" step="any" id="school-lng" class="neu-input" placeholder="Longitude">
           </div><button id="get-current-location" class="mt-2 text-sm text-blue-600 font-medium">📍 Gunakan Lokasi Semasa</button>
          </div>
          <div class="p-3 rounded-lg bg-blue-50 border border-blue-200">
-          <p class="text-xs text-blue-700"><strong>💡 Info:</strong> Jika Geofencing DIHIDUPKAN, staf hanya boleh daftar masuk dalam radius 200 meter dari koordinat pusat sekolah.</p>
+          <p class="text-xs text-blue-700"><strong>💡 Info:</strong> Jika Geofencing DIHIDUPKAN, staf hanya boleh daftar masuk dalam radius yang ditetapkan dari koordinat pusat sekolah.</p>
          </div>
         </div><button id="save-control-btn" class="w-full py-3 rounded-xl neu-button-primary font-bold text-white">💾 Simpan & Sync Tetapan (Global)</button>
        </div><!-- Docs Tab -->
@@ -586,7 +591,7 @@
     const defaultConfig = { app_title: 'Sistem Kehadiran 3D Elite', school_name: 'SK SELAMA (K)' };
 
     // ==================== STATE ====================
-    let settings = { gasUrl: '', googleClientId: '', schoolLat: 0, schoolLng: 0, deviceId: '', geofencingEnabled: false };
+    let settings = { gasUrl: '', googleClientId: '', schoolLat: 0, schoolLng: 0, deviceId: '', geofencingEnabled: false, geofenceRadius: 200 };
     let currentUser = null;
     let currentGPS = null;
     let isOnline = navigator.onLine;
@@ -697,7 +702,8 @@
       
       if (settings.schoolLat && settings.schoolLng) {
         const dist = calculateDistance(currentGPS.lat, currentGPS.lng, settings.schoolLat, settings.schoolLng);
-        isWithinGeofence = dist <= 200;
+        const radius = settings.geofenceRadius || 200;
+        isWithinGeofence = dist <= radius;
         led.className = isWithinGeofence ? 'led-3d led-green' : 'led-3d led-red';
         text.textContent = isWithinGeofence ? `Dalam Zon (${Math.round(dist)}m)` : `Luar Zon (${Math.round(dist)}m)`;
       } else {
@@ -850,7 +856,8 @@
       try {
         if (settings.geofencingEnabled) {
           if (!currentGPS || !settings.schoolLat) throw new Error('Lokasi/GPS diperlukan');
-          if (calculateDistance(currentGPS.lat, currentGPS.lng, settings.schoolLat, settings.schoolLng) > 200) throw new Error('Di luar kawasan (radius 200m)');
+          const radius = settings.geofenceRadius || 200;
+          if (calculateDistance(currentGPS.lat, currentGPS.lng, settings.schoolLat, settings.schoolLng) > radius) throw new Error(`Di luar kawasan (radius ${radius}m)`);
         }
 
         const now = new Date();
@@ -928,11 +935,12 @@
           if (res.success && res.data) {
              // Update local settings with server data
              let changed = false;
-             const keys = ['googleClientId', 'schoolLat', 'schoolLng', 'geofencingEnabled'];
+             const keys = ['googleClientId', 'schoolLat', 'schoolLng', 'geofencingEnabled', 'geofenceRadius'];
              
              keys.forEach(key => {
                  if (res.data[key] !== undefined && res.data[key] !== settings[key]) {
                      if (key === 'schoolLat' || key === 'schoolLng') settings[key] = parseFloat(res.data[key]);
+                     else if (key === 'geofenceRadius') settings[key] = parseInt(res.data[key]);
                      else if (key === 'geofencingEnabled') settings[key] = String(res.data[key]).toLowerCase() === 'true';
                      else settings[key] = res.data[key];
                      changed = true;
@@ -945,6 +953,7 @@
                 if (document.getElementById('google-client-id')) document.getElementById('google-client-id').value = settings.googleClientId || '';
                 if (document.getElementById('school-lat')) document.getElementById('school-lat').value = settings.schoolLat || '';
                 if (document.getElementById('school-lng')) document.getElementById('school-lng').value = settings.schoolLng || '';
+                if (document.getElementById('geofence-radius')) document.getElementById('geofence-radius').value = settings.geofenceRadius || 200;
                 
                 const gfToggle = document.getElementById('toggle-geofence');
                 const gfDot = document.getElementById('geofence-toggle-dot');
@@ -994,6 +1003,7 @@
              document.getElementById('google-client-id').value = settings.googleClientId || '';
              document.getElementById('school-lat').value = settings.schoolLat || '';
              document.getElementById('school-lng').value = settings.schoolLng || '';
+             document.getElementById('geofence-radius').value = settings.geofenceRadius || 200;
              
              // Pre-fill Geofence Status
              const gfToggle = document.getElementById('toggle-geofence');
@@ -1053,6 +1063,7 @@
           
           settings.schoolLat = parseFloat(document.getElementById('school-lat').value) || 0;
           settings.schoolLng = parseFloat(document.getElementById('school-lng').value) || 0;
+          settings.geofenceRadius = parseInt(document.getElementById('geofence-radius').value) || 200;
           // geofencingEnabled is already toggled in settings
           saveSettings(); 
           
@@ -1060,7 +1071,8 @@
              await callAppsScript('saveConfig', { 
                  schoolLat: settings.schoolLat, 
                  schoolLng: settings.schoolLng, 
-                 geofencingEnabled: settings.geofencingEnabled 
+                 geofencingEnabled: settings.geofencingEnabled,
+                 geofenceRadius: settings.geofenceRadius
              });
              showToast('✅ Tetapan Disimpan Secara Global', 'success');
           } catch(e) {
