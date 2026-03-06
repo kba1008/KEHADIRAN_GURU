@@ -70,7 +70,8 @@
       transition: all 0.2s;
     }
     .neu-input:focus { box-shadow: inset 8px 8px 20px #b8bbbe, inset -8px -8px 20px #ffffff; }
-    
+    .neu-input:disabled { background: #e9ecef; color: #9ca3af; box-shadow: none; cursor: not-allowed; }
+
     .neu-select {
       background: linear-gradient(145deg, #e6e9ec, #ffffff);
       box-shadow: inset 6px 6px 15px #c5c8cb, inset -6px -6px 15px #ffffff;
@@ -272,7 +273,7 @@
        <div class="w-20 h-20 rounded-2xl bg-gradient-to-br from-emerald-400 to-emerald-600 flex items-center justify-center shadow-lg mx-auto mb-4">
          <svg class="w-10 h-10 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
        </div>
-       <h1 class="font-bold text-gray-800 text-2xl">Sistem Kehadiran v1</h1>
+       <h1 class="font-bold text-gray-800 text-2xl">Sistem Kehadiran ss</h1>
        <p class="text-sm text-gray-500">SK SELAMA (K)</p>
      </div>
      
@@ -458,12 +459,22 @@
       </div><!-- Content -->
       <div class="p-6 overflow-y-auto max-h-[calc(90vh-200px)]"><!-- Config Tab -->
        <div id="tab-config" class="admin-tab-content space-y-4">
-        <div><label class="block text-sm font-medium text-gray-600 mb-2">Google Apps Script URL</label> <input type="url" id="gas-url" class="neu-input text-sm" placeholder="https://script.google.com/macros/s/...">
+        <div class="flex items-center justify-between mb-2">
+          <h3 class="font-bold text-gray-700">Tetapan Sambungan</h3>
+          <button id="config-lock-btn" class="text-xs font-bold px-3 py-1.5 rounded-lg bg-red-100 text-red-600 flex items-center gap-1 transition-colors hover:bg-red-200">
+            <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"/></svg>
+            TERKUNCI
+          </button>
+        </div>
+        <div class="p-3 bg-yellow-50 border border-yellow-200 rounded-lg">
+          <p class="text-xs text-yellow-800">⚠️ <strong>Perhatian:</strong> Apabila anda menyimpan tetapan, ia akan dikemaskini secara global untuk semua pengguna yang menggunakan URL Apps Script yang sama.</p>
+        </div>
+        <div><label class="block text-sm font-medium text-gray-600 mb-2">Google Apps Script URL</label> <input type="url" id="gas-url" class="neu-input text-sm" placeholder="https://script.google.com/macros/s/..." disabled>
          <p class="text-xs text-gray-400 mt-1">URL deployment untuk integrasi Google Sheet &amp; Drive</p>
         </div>
-        <div><label class="block text-sm font-medium text-gray-600 mb-2">Google Client ID</label> <input type="text" id="google-client-id" class="neu-input text-sm" placeholder="xxxxx.apps.googleusercontent.com">
+        <div><label class="block text-sm font-medium text-gray-600 mb-2">Google Client ID</label> <input type="text" id="google-client-id" class="neu-input text-sm" placeholder="xxxxx.apps.googleusercontent.com" disabled>
          <p class="text-xs text-gray-400 mt-1">Untuk login Google</p>
-        </div><button id="save-config-btn" class="w-full py-3 rounded-xl neu-button-primary font-bold text-white">💾 Simpan Konfigurasi</button>
+        </div><button id="save-config-btn" class="w-full py-3 rounded-xl neu-button-primary font-bold text-white disabled:opacity-50 disabled:cursor-not-allowed" disabled>💾 Simpan Konfigurasi Global</button>
        </div><!-- Control Tab -->
        <div id="tab-control" class="admin-tab-content hidden space-y-6">
         <div class="p-4 rounded-xl bg-gray-50 space-y-4">
@@ -488,7 +499,7 @@
          <div class="p-3 rounded-lg bg-blue-50 border border-blue-200">
           <p class="text-xs text-blue-700"><strong>💡 Info:</strong> Jika Geofencing DIHIDUPKAN, staf hanya boleh daftar masuk dalam radius 200 meter dari koordinat pusat sekolah.</p>
          </div>
-        </div><button id="save-control-btn" class="w-full py-3 rounded-xl neu-button-primary font-bold text-white">💾 Simpan Tetapan</button>
+        </div><button id="save-control-btn" class="w-full py-3 rounded-xl neu-button-primary font-bold text-white">💾 Simpan & Sync Tetapan (Global)</button>
        </div><!-- Docs Tab -->
        <div id="tab-docs" class="admin-tab-content hidden space-y-4 text-sm">
         <div class="p-4 rounded-xl bg-blue-50 border border-blue-200">
@@ -583,6 +594,7 @@
     let todayRecords = [];
     let currentFilter = 'all';
     let tokenClient;
+    let isConfigLocked = true;
 
     // ==================== UTILITIES ====================
     function generateId() { return Date.now().toString(36) + Math.random().toString(36).substr(2); }
@@ -908,6 +920,48 @@
       btn.disabled = false; btn.innerHTML = 'Daftar Akaun';
     }
 
+    // ==================== GLOBAL CONFIG SYNC ====================
+    async function syncGlobalConfig() {
+       if (!settings.gasUrl) return;
+       try {
+          const res = await callAppsScript('getConfig');
+          if (res.success && res.data) {
+             // Update local settings with server data
+             let changed = false;
+             const keys = ['googleClientId', 'schoolLat', 'schoolLng', 'geofencingEnabled'];
+             
+             keys.forEach(key => {
+                 if (res.data[key] !== undefined && res.data[key] !== settings[key]) {
+                     if (key === 'schoolLat' || key === 'schoolLng') settings[key] = parseFloat(res.data[key]);
+                     else if (key === 'geofencingEnabled') settings[key] = String(res.data[key]).toLowerCase() === 'true';
+                     else settings[key] = res.data[key];
+                     changed = true;
+                 }
+             });
+
+             if (changed) {
+                saveSettings();
+                // Update UI elements if Admin Panel is open
+                if (document.getElementById('google-client-id')) document.getElementById('google-client-id').value = settings.googleClientId || '';
+                if (document.getElementById('school-lat')) document.getElementById('school-lat').value = settings.schoolLat || '';
+                if (document.getElementById('school-lng')) document.getElementById('school-lng').value = settings.schoolLng || '';
+                
+                const gfToggle = document.getElementById('toggle-geofence');
+                const gfDot = document.getElementById('geofence-toggle-dot');
+                const gfText = document.getElementById('geofence-status-text');
+                if(gfToggle) {
+                    gfToggle.style.background = settings.geofencingEnabled ? '#10B981' : '#ccc';
+                    gfDot.style.transform = settings.geofencingEnabled ? 'translateX(29px)' : 'translateX(1px)';
+                    gfText.textContent = settings.geofencingEnabled ? 'DIHIDUPKAN' : 'DIMATIKAN';
+                }
+                
+                console.log('Global config synced & applied');
+                initGoogleAuth();
+             }
+          }
+       } catch(e) { console.log('Silent sync failed', e); }
+    }
+
     // ==================== INIT ====================
     async function init() {
       loadSettings();
@@ -935,18 +989,86 @@
       document.getElementById('admin-login-btn').addEventListener('click', () => {
          if (document.getElementById('admin-password').value === ADMIN_PASSWORD) {
              document.getElementById('admin-password-section').classList.add('hidden'); document.getElementById('admin-content').classList.remove('hidden');
+             // Pre-fill inputs
+             document.getElementById('gas-url').value = settings.gasUrl || '';
+             document.getElementById('google-client-id').value = settings.googleClientId || '';
+             document.getElementById('school-lat').value = settings.schoolLat || '';
+             document.getElementById('school-lng').value = settings.schoolLng || '';
+             
+             // Pre-fill Geofence Status
+             const gfToggle = document.getElementById('toggle-geofence');
+             const gfDot = document.getElementById('geofence-toggle-dot');
+             const gfText = document.getElementById('geofence-status-text');
+             gfToggle.style.background = settings.geofencingEnabled ? '#10B981' : '#ccc';
+             gfDot.style.transform = settings.geofencingEnabled ? 'translateX(29px)' : 'translateX(1px)';
+             gfText.textContent = settings.geofencingEnabled ? 'DIHIDUPKAN' : 'DIMATIKAN';
+             
          } else document.getElementById('admin-error').classList.remove('hidden');
       });
-      document.getElementById('save-config-btn').addEventListener('click', () => { 
-          settings.gasUrl = document.getElementById('gas-url').value.trim(); 
-          settings.googleClientId = document.getElementById('google-client-id').value.trim(); 
-          saveSettings(); showToast('✅ Disimpan', 'success'); initGoogleAuth();
+      
+      // Admin Config Lock & Save
+      document.getElementById('config-lock-btn').addEventListener('click', () => {
+         isConfigLocked = !isConfigLocked;
+         const btn = document.getElementById('config-lock-btn');
+         const inputs = ['gas-url', 'google-client-id'];
+         const saveBtn = document.getElementById('save-config-btn');
+         
+         if (isConfigLocked) {
+             btn.innerHTML = '<svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"/></svg> TERKUNCI';
+             btn.className = 'text-xs font-bold px-3 py-1.5 rounded-lg bg-red-100 text-red-600 flex items-center gap-1 transition-colors hover:bg-red-200';
+             inputs.forEach(id => document.getElementById(id).disabled = true);
+             saveBtn.disabled = true;
+         } else {
+             btn.innerHTML = '<svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 11V7a4 4 0 118 0m-4 8v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2z"/></svg> NYAHKUNCI';
+             btn.className = 'text-xs font-bold px-3 py-1.5 rounded-lg bg-green-100 text-green-600 flex items-center gap-1 transition-colors hover:bg-green-200';
+             inputs.forEach(id => document.getElementById(id).disabled = false);
+             saveBtn.disabled = false;
+         }
       });
-      document.getElementById('save-control-btn').addEventListener('click', () => {
+
+      document.getElementById('save-config-btn').addEventListener('click', async () => { 
+          const newGasUrl = document.getElementById('gas-url').value.trim();
+          const newClientId = document.getElementById('google-client-id').value.trim();
+          
+          settings.gasUrl = newGasUrl;
+          settings.googleClientId = newClientId;
+          saveSettings(); 
+          
+          // Attempt global sync
+          const btn = document.getElementById('save-config-btn');
+          btn.textContent = 'Menyimpan...';
+          try {
+             await callAppsScript('saveConfig', { googleClientId: newClientId });
+             showToast('✅ Disimpan ke Server & Local', 'success');
+          } catch(e) {
+             showToast('⚠️ Disimpan Local Sahaja. Ralat Server.', 'warning');
+          }
+          btn.textContent = '💾 Simpan Konfigurasi Global';
+          initGoogleAuth();
+      });
+
+      document.getElementById('save-control-btn').addEventListener('click', async () => {
+          const btn = document.getElementById('save-control-btn');
+          btn.disabled = true; btn.textContent = 'Menyimpan Global...';
+          
           settings.schoolLat = parseFloat(document.getElementById('school-lat').value) || 0;
           settings.schoolLng = parseFloat(document.getElementById('school-lng').value) || 0;
-          saveSettings(); showToast('✅ Disimpan', 'success');
+          // geofencingEnabled is already toggled in settings
+          saveSettings(); 
+          
+          try {
+             await callAppsScript('saveConfig', { 
+                 schoolLat: settings.schoolLat, 
+                 schoolLng: settings.schoolLng, 
+                 geofencingEnabled: settings.geofencingEnabled 
+             });
+             showToast('✅ Tetapan Disimpan Secara Global', 'success');
+          } catch(e) {
+             showToast('⚠️ Gagal sync ke server', 'warning');
+          }
+          btn.disabled = false; btn.textContent = '💾 Simpan & Sync Tetapan (Global)';
       });
+      
       document.getElementById('get-current-location').addEventListener('click', () => {
           if (currentGPS) { document.getElementById('school-lat').value = currentGPS.lat; document.getElementById('school-lng').value = currentGPS.lng; } 
           else showToast('⚠️ GPS tiada', 'warning');
@@ -956,7 +1078,7 @@
           document.getElementById('toggle-geofence').style.background = settings.geofencingEnabled ? '#10B981' : '#ccc';
           document.getElementById('geofence-toggle-dot').style.transform = settings.geofencingEnabled ? 'translateX(29px)' : 'translateX(1px)';
           document.getElementById('geofence-status-text').textContent = settings.geofencingEnabled ? 'DIHIDUPKAN' : 'DIMATIKAN';
-          saveSettings();
+          // Note: We don't save immediately here, user must click Save button to confirm
       });
       
       // Tabs
@@ -988,6 +1110,7 @@
 
       initGPS();
       initGoogleAuth();
+      syncGlobalConfig(); // Auto-sync on startup
       setInterval(() => { const n = new Date(); document.getElementById('current-date').textContent = formatDate(n); document.getElementById('current-time').textContent = formatTime(n); }, 1000);
     }
 
@@ -1154,7 +1277,8 @@ const SHEET_NAMES = {
   AKP: 'AKP',
   KEBERSIHAN: 'KEBERSIHAN',
   PELAWAT: 'PELAWAT',
-  PENDAFTARAN: 'PENDAFTARAN'
+  PENDAFTARAN: 'PENDAFTARAN',
+  CONFIG: 'CONFIG'
 };
 
 // ===== MAIN FUNCTIONS =====
@@ -1176,6 +1300,10 @@ function doPost(e) {
         return registerUser(ss, data);
       case 'validateUser':
         return validateUser(ss, data);
+      case 'saveConfig':
+        return saveConfig(ss, data);
+      case 'getConfig':
+        return getConfig(ss);
       default:
         return createResponse(false, 'Unknown action');
     }
@@ -1189,6 +1317,52 @@ function doGet(e) {
   return ContentService
     .createTextOutput(JSON.stringify({status: 'ok', version: '1.0'}))
     .setMimeType(ContentService.MimeType.JSON);
+}
+
+// ===== CONFIGURATION FUNCTIONS =====
+function saveConfig(ss, data) {
+  try {
+    let sheet = ss.getSheetByName(SHEET_NAMES.CONFIG);
+    if (!sheet) {
+       sheet = ss.insertSheet(SHEET_NAMES.CONFIG);
+       sheet.appendRow(['Key', 'Value']);
+    }
+    
+    // Read existing
+    const rows = sheet.getDataRange().getValues();
+    let config = {};
+    if (rows.length > 1) {
+       for(let i=1; i<rows.length; i++) config[rows[i][0]] = rows[i][1];
+    }
+    
+    // Merge new (excluding action)
+    for (const key in data) {
+      if (key !== 'action') config[key] = data[key];
+    }
+    
+    // Write back
+    sheet.clearContents();
+    sheet.appendRow(['Key', 'Value']);
+    for (const key in config) {
+       sheet.appendRow([key, config[key]]);
+    }
+    
+    return createResponse(true, 'Config saved');
+  } catch(e) { return createResponse(false, e.toString()); }
+}
+
+function getConfig(ss) {
+  try {
+    const sheet = ss.getSheetByName(SHEET_NAMES.CONFIG);
+    if (!sheet) return createResponse(true, 'No config found', { googleClientId: '' });
+    
+    const rows = sheet.getDataRange().getValues();
+    let config = {};
+    for(let i=1; i<rows.length; i++) {
+       config[rows[i][0]] = rows[i][1];
+    }
+    return createResponse(true, 'Config loaded', config);
+  } catch(e) { return createResponse(false, e.toString()); }
 }
 
 // ===== USER MANAGEMENT FUNCTIONS =====
@@ -1387,6 +1561,8 @@ function setup() {
       sheet = ss.insertSheet(name);
       if(name === 'PENDAFTARAN') {
          sheet.appendRow(['Timestamp', 'Nama', 'Kategori', 'Emel', 'Kata Laluan', 'Status']);
+      } else if(name === 'CONFIG') {
+         sheet.appendRow(['Key', 'Value']);
       } else {
          sheet.appendRow(['Timestamp', 'Tarikh', 'Nama', 'Emel', 'Waktu Masuk', 'Waktu Keluar', 'Lokasi GPS', 'Device ID', 'Link Gambar', 'Tujuan', 'Status']);
       }
